@@ -1,0 +1,103 @@
+@import 'tailwindcss';
+@plugin 'daisyui' {
+    themes: light --default, dark;
+}
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../views/**/*.blade.php';
+
+/* Alpine.js cloak - hide elements until Alpine initializes */
+[x-cloak] {
+    display: none !important;
+}
+
+/* Fix DaisyUI drawer scroll - allow main content to scroll */
+.drawer-content {
+    overflow-y: auto !important;
+}
+
+@theme {
+    /* Font */
+    --font-sans: 'Figtree', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+
+    /* Primary Blue (ITK Brand) */
+    --color-primary-50: #E3F2FD;
+    --color-primary-100: #BBDEFB;
+    --color-primary-200: #90CAF9;
+    --color-primary-300: #64B5F6;
+    --color-primary-400: #42A5F5;
+    --color-primary-500: #2196F3;
+    --color-primary-600: #1E88E5;
+    --color-primary-700: #1565C0;
+    --color-primary-800: #0D47A1;
+    --color-primary-900: #0A3A8A;
+
+    /* Secondary Gold (ITK Brand) */
+    --color-secondary-50: #FFF8E1;
+    --color-secondary-100: #FFECB3;
+    --color-secondary-200: #FFE082;
+    --color-secondary-300: #FFD54F;
+    --color-secondary-400: #FFCA28;
+    --color-secondary-500: #F5A623;
+    --color-secondary-600: #F59E0B;
+    --color-secondary-700: #D48806;
+    --color-secondary-800: #B87005;
+    --color-secondary-900: #8B5504;
+
+    /* Status: Red (totally_down / error) */
+    --color-danger-50: #FEF2F2;
+    --color-danger-100: #FEE2E2;
+    --color-danger-200: #FECACA;
+    --color-danger-300: #FCA5A5;
+    --color-danger-400: #F87171;
+    --color-danger-500: #EF4444;
+    --color-danger-600: #DC2626;
+    --color-danger-700: #B91C1C;
+    --color-danger-800: #991B1B;
+    --color-danger-900: #7F1D1D;
+
+    /* Status: Yellow (partially_down / warning) */
+    --color-warning-50: #FFFBEB;
+    --color-warning-100: #FEF3C7;
+    --color-warning-200: #FDE68A;
+    --color-warning-300: #FCD34D;
+    --color-warning-400: #FBBF24;
+    --color-warning-500: #F59E0B;
+    --color-warning-600: #D97706;
+    --color-warning-700: #B45309;
+    --color-warning-800: #92400E;
+    --color-warning-900: #78350F;
+
+    /* Status: Green (up / success) */
+    --color-success-50: #F0FDF4;
+    --color-success-100: #DCFCE7;
+    --color-success-200: #BBF7D0;
+    --color-success-300: #86EFAC;
+    --color-success-400: #4ADE80;
+    --color-success-500: #22C55E;
+    --color-success-600: #16A34A;
+    --color-success-700: #15803D;
+    --color-success-800: #166534;
+    --color-success-900: #14532D;
+
+    /* Info Cyan */
+    --color-info-50: #ECFEFF;
+    --color-info-100: #CFFAFE;
+    --color-info-200: #A5F3FC;
+    --color-info-300: #67E8F9;
+    --color-info-400: #22D3EE;
+    --color-info-500: #06B6D4;
+    --color-info-600: #0891B2;
+    --color-info-700: #0E7490;
+    --color-info-800: #155E75;
+    --color-info-900: #164E63;
+
+    /* Dark */
+    --color-dark: #1A1A2E;
+
+    /* Light */
+    --color-light: #F8FAFC;
+}
+
