@@ -883,26 +883,36 @@
                 <div class="flex-1 overflow-y-auto px-4 py-2 space-y-1" x-data x-init="$nextTick(() => $el.scrollTop = $el.scrollHeight)"
                     x-effect="$el.scrollTop = $el.scrollHeight">
                     @forelse($this->cycleLogs as $log)
-                        <div class="flex items-center gap-2 py-1 border-b border-base-200/50 text-xs">
-                            <span class="text-base-content/40 font-mono shrink-0">{{ $log['time'] }}</span>
-                            @if ($log['http_code'] === 0)
-                                <span class="badge badge-error badge-xs shrink-0">ERR</span>
-                            @elseif($log['http_code'] >= 200 && $log['http_code'] < 400)
-                                <span class="badge badge-success badge-xs shrink-0">{{ $log['http_code'] }}</span>
-                            @else
-                                <span class="badge badge-error badge-xs shrink-0">{{ $log['http_code'] }}</span>
-                            @endif
-                            <span class="font-medium text-base-content truncate shrink-0 max-w-[120px]"
-                                title="{{ $log['site'] }}">{{ $log['site'] }}</span>
-                            <span class="text-base-content/50 truncate"
-                                title="{{ $log['url'] }}">{{ parse_url($log['url'], PHP_URL_PATH) ?: '/' }}</span>
-                            @if ($log['http_code'] > 0 && $log['response_time_ms'] > 0)
-                                <span
-                                    class="text-base-content/40 font-mono ml-auto shrink-0">{{ number_format($log['response_time_ms'], 0) }}ms</span>
-                            @elseif($log['http_code'] === 0)
-                                <span class="text-error/70 ml-auto shrink-0">{{ $log['error_type'] }}</span>
-                            @endif
-                        </div>
+                        @if ($log['http_code'] === -1)
+                            {{-- Retry separator --}}
+                            <div class="flex items-center gap-2 py-2 my-1">
+                                <div class="flex-1 border-t border-warning/40"></div>
+                                <span class="text-xs font-semibold text-warning shrink-0">🔄 Retry Cycle (verifying
+                                    down sites)</span>
+                                <div class="flex-1 border-t border-warning/40"></div>
+                            </div>
+                        @else
+                            <div class="flex items-center gap-2 py-1 border-b border-base-200/50 text-xs">
+                                <span class="text-base-content/40 font-mono shrink-0">{{ $log['time'] }}</span>
+                                @if ($log['http_code'] === 0)
+                                    <span class="badge badge-error badge-xs shrink-0">ERR</span>
+                                @elseif($log['http_code'] >= 200 && $log['http_code'] < 400)
+                                    <span class="badge badge-success badge-xs shrink-0">{{ $log['http_code'] }}</span>
+                                @else
+                                    <span class="badge badge-error badge-xs shrink-0">{{ $log['http_code'] }}</span>
+                                @endif
+                                <span class="font-medium text-base-content truncate shrink-0 max-w-[120px]"
+                                    title="{{ $log['site'] }}">{{ $log['site'] }}</span>
+                                <span class="text-base-content/50 truncate"
+                                    title="{{ $log['url'] }}">{{ parse_url($log['url'], PHP_URL_PATH) ?: '/' }}</span>
+                                @if ($log['http_code'] > 0 && $log['response_time_ms'] > 0)
+                                    <span
+                                        class="text-base-content/40 font-mono ml-auto shrink-0">{{ number_format($log['response_time_ms'], 0) }}ms</span>
+                                @elseif($log['http_code'] === 0)
+                                    <span class="text-error/70 ml-auto shrink-0">{{ $log['error_type'] }}</span>
+                                @endif
+                            </div>
+                        @endif
                     @empty
                         <div class="text-center py-8 text-base-content/40">
                             <svg class="mx-auto w-8 h-8 mb-2" fill="none" stroke="currentColor"

@@ -59,9 +59,18 @@ class HealthCheckService implements HealthCheckServiceInterface
 
     /**
      * Initialize live log for a new cycle.
+     * Only resets if no log exists yet (avoids wiping on retry).
      */
     private function initLiveLog(int $totalPages): void
     {
+        // If log already has entries, this is a retry — just update the total count
+        $existingLogs = Cache::get(self::CYCLE_LOG_KEY, []);
+        if (!empty($existingLogs)) {
+            $currentTotal = (int) Cache::get(self::CYCLE_TOTAL_KEY, 0);
+            Cache::put(self::CYCLE_TOTAL_KEY, $currentTotal + $totalPages, 600);
+            return;
+        }
+
         Cache::put(self::CYCLE_TOTAL_KEY, $totalPages, 600);
         Cache::put(self::CYCLE_LOG_KEY, [], 600);
     }

@@ -59,8 +59,15 @@ class MonitoringService implements MonitoringServiceInterface
             // 1. Fetch all sites with pages
             $sites = Site::with('pages')->get();
 
+            // Clear live log for this new cycle
+            Cache::forget('monitoring_cycle_live_log');
+            Cache::forget('monitoring_cycle_total_pages');
+
             // 2. Execute health checks for all sites
             $siteResults = $this->healthCheckService->checkAllSites($sites);
+
+            // 2.5 Retry down sites once to reduce false positives
+            $siteResults = $this->retryDownSites($sites, $siteResults);
 
             // 3. Create CheckingCycle record
             $cycle = CheckingCycle::create([
@@ -239,6 +246,48 @@ class MonitoringService implements MonitoringServiceInterface
             ['key' => 'cycle_interval_minutes'],
             ['value' => (string) $minutes, 'updated_at' => now()],
         );
+    }
+
+    /**
+     * Retry sites that appear down to reduce false positives.
+     *
+     * After the initial check, any site with at least one failing page is
+     * re-checked. The retry result replaces the original for that site.
+     */
+    private function retryDownSites(Collection $sites, Collection $siteResults): Collection
+    {
+        // Identify sites that have at least one failing page
+        $downSiteIds = $siteResults->filter(function (SiteCheckResult $result) {
+            return $result->pageResults->contains(fn($page) => !$page->isReachable());
+        })->pluck('siteId');
+
+        if ($downSiteIds->isEmpty()) {
+            return $siteResults;
+        }
+
+        // Append a separator entry to the live log
+        $logs = Cache::get('monitoring_cycle_live_log', []);
+        $logs[] = [
+            'site' => '--- RETRY CYCLE ---',
+            'url' => '',
+            'http_code' => -1,
+            'error_type' => 'none',
+            'response_time_ms' => 0,
+            'time' => now()->format('H:i:s'),
+        ];
+        Cache::put('monitoring_cycle_live_log', $logs, 600);
+
+        // Get the Site models for the down sites
+        $downSites = $sites->filter(fn(Site $site) => $downSiteIds->contains($site->id));
+
+        // Re-check only the down sites
+        $retryResults = $this->healthCheckService->checkAllSites($downSites);
+
+        // Replace original results with retry results
+        return $siteResults->map(function (SiteCheckResult $original) use ($retryResults) {
+            $retry = $retryResults->firstWhere('siteId', $original->siteId);
+            return $retry ?? $original;
+        });
     }
 
     /**
