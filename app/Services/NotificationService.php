@@ -226,23 +226,15 @@ class NotificationService implements NotificationServiceInterface
             $notificationCycleCounter = 0;
             $shouldNotify = true;
         }
-        // Check for status change notification (Req 13.6)
+        // Check for repeated notification at exact threshold multiples (Req 13.4, 13.5)
         elseif (
             $notificationSent
-            && $consecutiveDownCount >= self::FALSE_POSITIVE_THRESHOLD
-            && $this->isDownStatus($previousStatus)
-            && $previousStatus !== $currentStatus
-        ) {
-            $shouldNotify = true;
-        }
-        // Check for repeated notification (Req 13.4, 13.5)
-        elseif (
-            $notificationSent
-            && $consecutiveDownCount >= self::FALSE_POSITIVE_THRESHOLD
+            && $consecutiveDownCount > self::FALSE_POSITIVE_THRESHOLD
         ) {
             $threshold = $this->getNotificationCycleThreshold();
 
-            if ($notificationCycleCounter >= $threshold && $notificationCycleCounter % $threshold === 0) {
+            if ($notificationCycleCounter >= $threshold) {
+                $notificationCycleCounter = 0;
                 $shouldNotify = true;
             }
         }
