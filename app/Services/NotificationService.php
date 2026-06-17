@@ -8,7 +8,6 @@ use App\Models\NotificationLog;
 use App\Models\Site;
 use App\Models\SystemConfig;
 use App\Models\TelegramTarget;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
@@ -23,7 +22,7 @@ class NotificationService implements NotificationServiceInterface
     /** Seconds between retry attempts */
     private const RETRY_INTERVAL_SECONDS = 5;
 
-    /** Default notification cycle threshold */
+    /** Default notification cycle threshold for repeat notifications */
     private const DEFAULT_NOTIFICATION_CYCLE_THRESHOLD = 6;
 
     public function __construct(
@@ -33,15 +32,20 @@ class NotificationService implements NotificationServiceInterface
     /**
      * Evaluate all sites and send notifications as needed.
      *
-     * Logic flow:
-     * 1. For each site result, load the site from DB
-     * 2. Determine current status from the check results
-     * 3. Apply notification rules based on consecutive_down_count and status transitions
-     * 4. Send a single consolidated message listing ALL currently down sites
+     * Uses a global repeat timer: one consolidated notification every N cycles
+     * as long as any site remains down. Individual sites still track their own
+     * consecutive_down_count for the initial 3-cycle false positive threshold.
+     *
+     * Flow:
+     * 1. Evaluate each site for initial alert (3 consecutive down) or recovery
+     * 2. If any site triggers initial alert → send consolidated + reset global timer
+     * 3. If no initial alert triggered but sites are still down → increment global timer
+     * 4. If global timer hits threshold → send consolidated repeat + reset timer
      */
     public function evaluateAndNotify(Collection $siteResults): void
     {
-        $shouldSendConsolidated = false;
+        $initialAlertTriggered = false;
+        $recoveryTriggered = false;
 
         /** @var SiteCheckResult $siteResult */
         foreach ($siteResults as $siteResult) {
@@ -53,14 +57,49 @@ class NotificationService implements NotificationServiceInterface
 
             $result = $this->evaluateSite($site, $siteResult);
 
-            if ($result === 'send_down' || $result === 'send_recovery') {
-                $shouldSendConsolidated = true;
+            if ($result === 'send_down') {
+                $initialAlertTriggered = true;
+            } elseif ($result === 'send_recovery') {
+                $recoveryTriggered = true;
             }
         }
 
-        // Send consolidated down notification if any notification was triggered
-        if ($shouldSendConsolidated) {
+        // If an initial alert was triggered (new site hit threshold), send consolidated and reset global timer
+        if ($initialAlertTriggered) {
             $this->sendConsolidatedDownNotification();
+            $this->resetGlobalNotificationTimer();
+            return;
+        }
+
+        // If a recovery happened but there are still other down sites, send a consolidated update
+        if ($recoveryTriggered) {
+            $downSitesExist = Site::where('status', SiteStatus::PartiallyDown)
+                ->orWhere('status', SiteStatus::TotallyDown)
+                ->exists();
+
+            // Don't send consolidated if all sites are now up (recovery message was already sent)
+            if (!$downSitesExist) {
+                $this->resetGlobalNotificationTimer();
+                return;
+            }
+        }
+
+        // Check global repeat timer: if any sites are still down with notification_sent=true
+        $sitesWithActiveNotification = Site::where('notification_sent', true)
+            ->where(function ($q) {
+                $q->where('status', SiteStatus::PartiallyDown)
+                    ->orWhere('status', SiteStatus::TotallyDown);
+            })
+            ->exists();
+
+        if ($sitesWithActiveNotification) {
+            $globalCounter = $this->incrementGlobalNotificationTimer();
+            $threshold = $this->getNotificationCycleThreshold();
+
+            if ($globalCounter >= $threshold) {
+                $this->sendConsolidatedDownNotification();
+                $this->resetGlobalNotificationTimer();
+            }
         }
     }
 
@@ -69,8 +108,10 @@ class NotificationService implements NotificationServiceInterface
      */
     private function sendConsolidatedDownNotification(): void
     {
-        $downSites = Site::where('status', SiteStatus::PartiallyDown)
-            ->orWhere('status', SiteStatus::TotallyDown)
+        $downSites = Site::where(function ($q) {
+            $q->where('status', SiteStatus::PartiallyDown)
+                ->orWhere('status', SiteStatus::TotallyDown);
+        })
             ->whereNotNull('first_down_at')
             ->orderBy('first_down_at')
             ->get();
@@ -95,19 +136,14 @@ class NotificationService implements NotificationServiceInterface
 
     /**
      * Send a down notification for a specific site.
-     *
-     * Sends to all active Telegram targets with retry logic.
      */
     public function sendDownNotification(Site $site, string $status, array $downPages): void
     {
-        // Kept for interface compatibility, but consolidated notification is now used
         $this->sendConsolidatedDownNotification();
     }
 
     /**
      * Send a recovery notification for a specific site.
-     *
-     * Sends to all active Telegram targets with retry logic.
      */
     public function sendRecoveryNotification(Site $site, string $downDuration): void
     {
@@ -151,9 +187,45 @@ class NotificationService implements NotificationServiceInterface
     }
 
     /**
+     * Get the current global notification timer value.
+     */
+    private function getGlobalNotificationTimer(): int
+    {
+        $value = SystemConfig::getValue('global_notification_counter');
+        return $value !== null ? (int) $value : 0;
+    }
+
+    /**
+     * Increment the global notification timer and return the new value.
+     */
+    private function incrementGlobalNotificationTimer(): int
+    {
+        $current = $this->getGlobalNotificationTimer();
+        $newValue = $current + 1;
+
+        SystemConfig::updateOrCreate(
+            ['key' => 'global_notification_counter'],
+            ['value' => (string) $newValue, 'updated_at' => now()],
+        );
+
+        return $newValue;
+    }
+
+    /**
+     * Reset the global notification timer to 0.
+     */
+    private function resetGlobalNotificationTimer(): void
+    {
+        SystemConfig::updateOrCreate(
+            ['key' => 'global_notification_counter'],
+            ['value' => '0', 'updated_at' => now()],
+        );
+    }
+
+    /**
      * Evaluate a single site for notification conditions.
      *
-     * @return string|null 'send_down', 'send_recovery', or null
+     * @return string|null 'send_down' (initial alert), 'send_recovery', or null
      */
     private function evaluateSite(Site $site, SiteCheckResult $siteResult): ?string
     {
@@ -169,7 +241,7 @@ class NotificationService implements NotificationServiceInterface
         }
 
         // Site is down (partially or totally)
-        return $this->handleDownState($site, $currentStatus, $previousStatus, $siteResult);
+        return $this->handleDownState($site, $currentStatus);
     }
 
     /**
@@ -190,7 +262,7 @@ class NotificationService implements NotificationServiceInterface
             $shouldNotify = true;
         }
 
-        // Reset all counters on recovery (Req 14.4)
+        // Reset all counters on recovery
         $site->update([
             'status' => SiteStatus::Up,
             'consecutive_down_count' => 0,
@@ -205,69 +277,34 @@ class NotificationService implements NotificationServiceInterface
     /**
      * Handle the case when a site is in a down state.
      *
-     * @return string|null 'send_down' if a consolidated notification should be sent
+     * Only triggers 'send_down' when a site first hits the false positive threshold.
+     * Repeat notifications are handled by the global timer in evaluateAndNotify().
+     *
+     * @return string|null 'send_down' if initial alert should be sent
      */
-    private function handleDownState(
-        Site $site,
-        SiteStatus $currentStatus,
-        SiteStatus $previousStatus,
-        SiteCheckResult $siteResult,
-    ): ?string {
+    private function handleDownState(Site $site, SiteStatus $currentStatus): ?string
+    {
         $consecutiveDownCount = $site->consecutive_down_count + 1;
-        $notificationCycleCounter = $site->notification_cycle_counter + 1;
         $notificationSent = $site->notification_sent;
         $firstDownAt = $site->first_down_at ?? now();
 
         $shouldNotify = false;
 
-        // Check if we should send initial notification (Req 13.1)
+        // Send initial notification when site hits false positive threshold
         if ($consecutiveDownCount === self::FALSE_POSITIVE_THRESHOLD && !$notificationSent) {
             $notificationSent = true;
-            $notificationCycleCounter = 0;
             $shouldNotify = true;
-        }
-        // Check for repeated notification at exact threshold multiples (Req 13.4, 13.5)
-        elseif (
-            $notificationSent
-            && $consecutiveDownCount > self::FALSE_POSITIVE_THRESHOLD
-        ) {
-            $threshold = $this->getNotificationCycleThreshold();
-
-            if ($notificationCycleCounter >= $threshold) {
-                $notificationCycleCounter = 0;
-                $shouldNotify = true;
-            }
         }
 
         // Update site state
         $site->update([
             'status' => $currentStatus,
             'consecutive_down_count' => $consecutiveDownCount,
-            'notification_cycle_counter' => $notificationCycleCounter,
             'notification_sent' => $notificationSent,
             'first_down_at' => $firstDownAt,
         ]);
 
         return $shouldNotify ? 'send_down' : null;
-    }
-
-    /**
-     * Send a status change notification (between partially_down and totally_down).
-     */
-    private function sendStatusChangeNotification(Site $site, SiteStatus $newStatus, array $downPages): void
-    {
-        $message = $this->formatStatusChangeMessage($site, $newStatus->value, $downPages);
-
-        $result = $this->broadcastWithRetry($message);
-
-        NotificationLog::create([
-            'site_id' => $site->id,
-            'type' => 'status_change',
-            'message' => $message,
-            'targets_sent' => $result['sent'],
-            'targets_failed' => $result['failed'],
-            'sent_at' => now(),
-        ]);
     }
 
     /**
@@ -298,7 +335,6 @@ class NotificationService implements NotificationServiceInterface
                     ]);
                 }
 
-                // Wait before retrying (unless it's the last attempt)
                 if ($attempt < self::MAX_RETRY_ATTEMPTS) {
                     sleep(self::RETRY_INTERVAL_SECONDS);
                 }
@@ -315,7 +351,7 @@ class NotificationService implements NotificationServiceInterface
     }
 
     /**
-     * Format a consolidated down notification message with all currently down sites in a table.
+     * Format a consolidated down notification message with all currently down sites.
      */
     private function formatConsolidatedDownMessage(Collection $downSites): string
     {
@@ -340,44 +376,13 @@ class NotificationService implements NotificationServiceInterface
     }
 
     /**
-     * Format a down notification message (legacy, kept for reference).
-     */
-    private function formatDownMessage(Site $site, string $status, array $downPages): string
-    {
-        $statusLabel = $status === 'totally_down' ? '🔴 TOTALLY DOWN' : '🟡 PARTIALLY DOWN';
-
-        $duration = '';
-        if ($site->first_down_at) {
-            $duration = "\n⏱ Down since: " . $site->first_down_at->format('Y-m-d H:i:s');
-        }
-
-        return "⚠️ Site Down Alert\n\n"
-            . "📍 Site: {$site->name}\n"
-            . "� URL: {$site->base_url}\n"
-            . "� Status: {$statusLabel}"
-            . $duration;
-    }
-
-    /**
-     * Format a status change notification message.
-     */
-    private function formatStatusChangeMessage(Site $site, string $newStatus, array $downPages): string
-    {
-        $statusLabel = $newStatus === 'totally_down' ? '🔴 TOTALLY DOWN' : '🟡 PARTIALLY DOWN';
-
-        return "🔄 Status Change Alert\n\n"
-            . "📍 Site: {$site->name}\n"
-            . "🔗 URL: {$site->base_url}\n"
-            . "📊 New Status: {$statusLabel}";
-    }
-
-    /**
      * Format a recovery notification message.
      */
     private function formatRecoveryMessage(Site $site, string $downDuration): string
     {
         return "✅ Site Recovery\n\n"
             . "📍 Site: {$site->name}\n"
+            . "🔗 URL: {$site->base_url}\n"
             . "📊 Status: 🟢 UP\n"
             . "⏱ Total Down Duration: {$downDuration}";
     }
@@ -434,18 +439,6 @@ class NotificationService implements NotificationServiceInterface
         }
 
         return SiteStatus::PartiallyDown;
-    }
-
-    /**
-     * Get URLs of down pages from check results.
-     */
-    private function getDownPageUrls(SiteCheckResult $siteResult): array
-    {
-        return $siteResult->pageResults
-            ->filter(fn($result) => !$result->isReachable())
-            ->map(fn($result) => $result->url)
-            ->values()
-            ->all();
     }
 
     /**
