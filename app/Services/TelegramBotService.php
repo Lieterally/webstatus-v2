@@ -245,8 +245,7 @@ class TelegramBotService implements TelegramBotServiceInterface
     private function handleDown(string $chatId): void
     {
         try {
-            $downSites = Site::with('pages')
-                ->whereIn('status', [SiteStatus::PartiallyDown, SiteStatus::TotallyDown])
+            $downSites = Site::whereIn('status', [SiteStatus::PartiallyDown, SiteStatus::TotallyDown])
                 ->orderBy('name')
                 ->get();
 
@@ -263,15 +262,8 @@ class TelegramBotService implements TelegramBotServiceInterface
                     : '🟡 Partially Down';
 
                 $message .= "<b>{$site->name}</b>\n";
-                $message .= "Status: {$statusLabel}\n";
-                $message .= "Down Pages:\n";
-
-                foreach ($site->pages as $page) {
-                    $fullUrl = rtrim($site->base_url, '/') . $page->path;
-                    $message .= "  • {$fullUrl}\n";
-                }
-
-                $message .= "\n";
+                $message .= "🔗 {$site->base_url}\n";
+                $message .= "Status: {$statusLabel}\n\n";
             }
 
             $this->sendMessage($chatId, trim($message));

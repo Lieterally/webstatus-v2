@@ -106,9 +106,23 @@ class SiteController extends Controller
             'responsible_person_id' => $validated['responsible_person_id'],
         ]);
 
-        // Sync pages: delete existing and recreate
-        $site->pages()->delete();
-        foreach ($validated['pages'] as $path) {
+        // Sync pages: only add new and remove deleted, keep unchanged ones to preserve check history
+        $existingPages = $site->pages()->pluck('path', 'id')->toArray();
+        $submittedPaths = $validated['pages'];
+
+        // Delete pages that are no longer in the submitted list
+        $pathsToKeep = array_intersect($existingPages, $submittedPaths);
+        $idsToDelete = array_diff_key($existingPages, $pathsToKeep);
+
+        if (!empty($idsToDelete)) {
+            $site->pages()->whereIn('id', array_keys($idsToDelete))->delete();
+        }
+
+        // Add new pages that don't already exist
+        $existingPaths = array_values($pathsToKeep);
+        $newPaths = array_diff($submittedPaths, $existingPaths);
+
+        foreach ($newPaths as $path) {
             $site->pages()->create(['path' => $path]);
         }
 

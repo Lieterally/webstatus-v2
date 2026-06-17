@@ -80,7 +80,11 @@ class MonitoringService implements MonitoringServiceInterface
 
             $sitesDown = 0;
 
-            // 4. Process each site result
+            // 4. Evaluate notifications BEFORE updating site statuses
+            // (NotificationService needs to read the PREVIOUS status to detect transitions)
+            $this->notificationService->evaluateAndNotify($siteResults);
+
+            // 5. Process each site result - update statuses and persist check results
             foreach ($siteResults as $siteResult) {
                 $site = $sites->firstWhere('id', $siteResult->siteId);
 
@@ -112,9 +116,6 @@ class MonitoringService implements MonitoringServiceInterface
                 'completed_at' => $completedAt,
                 'sites_down' => $sitesDown,
             ]);
-
-            // 5. Evaluate notifications
-            $this->notificationService->evaluateAndNotify($siteResults);
 
             // 6. Update last cycle timestamp
             $this->updateLastCycleTimestamp($completedAt);
@@ -166,6 +167,10 @@ class MonitoringService implements MonitoringServiceInterface
         // Calculate average response time
         $avgResponseTime = $this->statusDeterminationService->calculateAverageResponseTime($pageResults);
 
+        // Evaluate notification BEFORE updating site status
+        // (NotificationService needs the PREVIOUS status to detect recovery)
+        $this->notificationService->evaluateAndNotify(collect([$siteResult]));
+
         // Update site status and consecutive_down_count
         $this->updateSiteStatus($site, $newStatus, $avgResponseTime);
 
@@ -173,9 +178,6 @@ class MonitoringService implements MonitoringServiceInterface
         if ($newStatus !== SiteStatus::Up) {
             $cycle->update(['sites_down' => 1]);
         }
-
-        // Evaluate notification for this single site
-        $this->notificationService->evaluateAndNotify(collect([$siteResult]));
 
         return $siteResult;
     }

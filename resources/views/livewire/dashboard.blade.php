@@ -147,7 +147,15 @@
         <div class="card-body">
             {{-- Header with site filter --}}
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-                <h2 class="card-title">Overview</h2>
+                <div>
+                    <h2 class="card-title">Overview</h2>
+                    @if ($overviewSiteInfo)
+                        <p class="text-sm text-base-content/60 mt-0.5">
+                            <span class="font-medium">{{ $overviewSiteInfo->name }}</span>
+                            <span class="text-base-content/40 ml-1">{{ $overviewSiteInfo->base_url }}</span>
+                        </p>
+                    @endif
+                </div>
                 <div class="flex items-center gap-2">
                     {{-- <label for="overviewSiteFilter" class="text-sm text-base-content/60">Filter site:</label>
                     <select id="overviewSiteFilter" wire:model.live="overviewSiteFilter"
@@ -208,115 +216,148 @@
                 </div>
             </div>
 
-            {{-- Charts grid - wire:key forces full rebuild when filter changes --}}
-            {{-- Charts grid - wire:ignore prevents Livewire from destroying canvases on poll --}}
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6" wire:ignore>
-                <div x-data="{
-                    chart: null,
-                    init() {
-                        this.createChart();
-                        Livewire.on('overviewChartsUpdated', (data) => {
-                            if (this.chart) { this.chart.destroy(); }
-                            this.createChartWithData(data[0].response);
-                        });
-                    },
-                    createChart() {
-                        const chartData = @js($overviewChartData['response']);
-                        this.createChartWithData(chartData);
-                    },
-                    createChartWithData(chartData) {
-                        const ctx = this.$refs.overviewResponseCanvas;
-                        if (!ctx) return;
-                        this.chart = new Chart(ctx, {
-                            type: 'line',
-                            data: {
-                                labels: chartData.labels,
-                                datasets: [{
-                                    label: 'Avg Response Time (s)',
-                                    data: chartData.data,
-                                    borderColor: '#1565C0',
-                                    backgroundColor: 'rgba(21, 101, 192, 0.1)',
-                                    borderWidth: 2,
-                                    fill: true,
-                                    tension: 0.3,
-                                    spanGaps: true,
-                                    pointRadius: 3,
-                                    pointHoverRadius: 5,
-                                }]
+            {{-- Charts grid --}}
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {{-- Response Time Chart --}}
+                <div>
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-sm font-semibold text-base-content/70">Response Time</h3>
+                        <div class="join">
+                            @foreach (['1D', '3D', '7D', '1M', '3M', '6M', '1Y'] as $filter)
+                                <button wire:click="$set('responseTimeFilter', '{{ $filter }}')"
+                                    class="join-item btn btn-xs {{ $responseTimeFilter === $filter ? 'btn-primary' : 'btn-ghost' }}">
+                                    {{ $filter }}
+                                </button>
+                            @endforeach
+                        </div>
+                    </div>
+                    <div class="bg-base-200/50 rounded-lg p-4" style="height: 280px;" wire:ignore
+                        x-data="{
+                            chart: null,
+                            init() {
+                                this.createChart();
+                                Livewire.on('overviewChartsUpdated', (data) => {
+                                    if (this.chart) { this.chart.destroy(); }
+                                    this.createChartWithData(data[0].response);
+                                });
                             },
-                            options: {
-                                responsive: true,
-                                maintainAspectRatio: false,
-                                plugins: {
-                                    legend: { display: false },
-                                    tooltip: { callbacks: { label: (c) => c.parsed.y !== null ? c.parsed.y.toFixed(3) + 's' : 'No data' } }
-                                },
-                                scales: {
-                                    y: { beginAtZero: true, title: { display: true, text: 'Seconds' }, grid: { color: 'rgba(0,0,0,0.05)' } },
-                                    x: { title: { display: true, text: 'Time (last 24 hours)' }, grid: { display: false } }
-                                }
+                            createChart() {
+                                const chartData = @js($overviewChartData['response']);
+                                this.createChartWithData(chartData);
+                            },
+                            createChartWithData(chartData) {
+                                const ctx = this.$refs.overviewResponseCanvas;
+                                if (!ctx) return;
+                                this.chart = new Chart(ctx, {
+                                    type: 'line',
+                                    data: {
+                                        labels: chartData.labels,
+                                        datasets: [{
+                                            label: 'Avg Response Time (s)',
+                                            data: chartData.data,
+                                            borderColor: '#1565C0',
+                                            backgroundColor: 'rgba(21, 101, 192, 0.1)',
+                                            borderWidth: 2,
+                                            fill: true,
+                                            tension: 0.3,
+                                            spanGaps: true,
+                                            pointRadius: 3,
+                                            pointHoverRadius: 5,
+                                        }]
+                                    },
+                                    options: {
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        plugins: {
+                                            legend: { display: false },
+                                            tooltip: { callbacks: { label: (c) => c.parsed.y !== null ? c.parsed.y.toFixed(3) + 's' : 'No data' } }
+                                        },
+                                        scales: {
+                                            y: { beginAtZero: true, title: { display: true, text: 'Seconds' }, grid: { color: 'rgba(0,0,0,0.05)' } },
+                                            x: { title: { display: true, text: chartData.xLabel || 'Time' }, grid: { display: false } }
+                                        }
+                                    }
+                                });
                             }
-                        });
-                    }
-                }">
-                    <h3 class="text-sm font-semibold text-base-content/70 mb-3">Response Time (Last 24 Hours)</h3>
-                    <div class="bg-base-200/50 rounded-lg p-4" style="height: 280px;">
+                        }">
                         <canvas x-ref="overviewResponseCanvas" style="width: 100%; height: 100%;"></canvas>
                     </div>
                 </div>
 
-                <div x-data="{
-                    chart: null,
-                    init() {
-                        this.createChart();
-                        Livewire.on('overviewChartsUpdated', (data) => {
-                            if (this.chart) { this.chart.destroy(); }
-                            this.createChartWithData(data[0].downtime);
-                            this.$refs.totalLabel.textContent = 'Total: ' + data[0].downtime.totalHours + 'h';
-                        });
-                    },
-                    createChart() {
-                        const chartData = @js($overviewChartData['downtime']);
-                        this.createChartWithData(chartData);
-                    },
-                    createChartWithData(chartData) {
-                        const ctx = this.$refs.overviewDowntimeCanvas;
-                        if (!ctx) return;
-                        this.chart = new Chart(ctx, {
-                            type: 'bar',
-                            data: {
-                                labels: chartData.labels,
-                                datasets: [{
-                                    label: 'Downtime (hours)',
-                                    data: chartData.data,
-                                    backgroundColor: '#DC2626',
-                                    borderColor: '#DC2626',
-                                    borderWidth: 1,
-                                    borderRadius: 2,
-                                }]
-                            },
-                            options: {
-                                responsive: true,
-                                maintainAspectRatio: false,
-                                plugins: {
-                                    legend: { display: false },
-                                    tooltip: { callbacks: { label: (c) => c.parsed.y.toFixed(2) + ' hours' } }
-                                },
-                                scales: {
-                                    y: { beginAtZero: true, max: 24, title: { display: true, text: 'Hours per day' }, grid: { color: 'rgba(0,0,0,0.05)' } },
-                                    x: { title: { display: true, text: 'Last 30 days' }, grid: { display: false } }
-                                }
-                            }
-                        });
-                    }
-                }">
+                {{-- Downtime Chart --}}
+                <div>
                     <div class="flex items-center justify-between mb-3">
-                        <h3 class="text-sm font-semibold text-base-content/70">Downtime (Last 30 Days)</h3>
-                        <span x-ref="totalLabel" class="badge badge-error badge-sm">
-                            Total: {{ $overviewChartData['downtime']['totalHours'] }}h
-                        </span>
+                        <h3 class="text-sm font-semibold text-base-content/70">Downtime</h3>
+                        <div class="flex items-center gap-2">
+                            <span class="badge badge-error badge-sm" id="downtimeTotalBadge">
+                                Total: {{ $overviewChartData['downtime']['totalHours'] }}
+                            </span>
+                            <div class="join">
+                                @foreach (['1D', '3D', '7D', '1M', '3M', '6M', '1Y'] as $filter)
+                                    <button wire:click="$set('downtimeFilter', '{{ $filter }}')"
+                                        class="join-item btn btn-xs {{ $downtimeFilter === $filter ? 'btn-primary' : 'btn-ghost' }}">
+                                        {{ $filter }}
+                                    </button>
+                                @endforeach
+                            </div>
+                        </div>
                     </div>
-                    <div class="bg-base-200/50 rounded-lg p-4" style="height: 280px;">
+                    <div class="bg-base-200/50 rounded-lg p-4" style="height: 280px;" wire:ignore
+                        x-data="{
+                            chart: null,
+                            init() {
+                                this.createChart();
+                                Livewire.on('overviewChartsUpdated', (data) => {
+                                    if (this.chart) { this.chart.destroy(); }
+                                    this.createChartWithData(data[0].downtime);
+                                    document.getElementById('downtimeTotalBadge').textContent = 'Total: ' + data[0].downtime.totalHours;
+                                });
+                            },
+                            createChart() {
+                                const chartData = @js($overviewChartData['downtime']);
+                                this.createChartWithData(chartData);
+                            },
+                            createChartWithData(chartData) {
+                                const ctx = this.$refs.overviewDowntimeCanvas;
+                                if (!ctx) return;
+                                this.chart = new Chart(ctx, {
+                                    type: 'bar',
+                                    data: {
+                                        labels: chartData.labels,
+                                        datasets: [{
+                                            label: 'Downtime (' + chartData.unit + ')',
+                                            data: chartData.data,
+                                            backgroundColor: '#DC2626',
+                                            borderColor: '#DC2626',
+                                            borderWidth: 1,
+                                            borderRadius: 2,
+                                        }]
+                                    },
+                                    options: {
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        plugins: {
+                                            legend: { display: false },
+                                            tooltip: {
+                                                callbacks: {
+                                                    label: (c) => c.parsed.y.toFixed(2) + ' ' + chartData.unit,
+                                                    afterBody: (tooltipItems) => {
+                                                        const idx = tooltipItems[0].dataIndex;
+                                                        const sites = chartData.downSites && chartData.downSites[idx];
+                                                        if (!sites || sites.length === 0) return '';
+                                                        return ['', 'Down sites:'].concat(sites.map(s => '  • ' + s));
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        scales: {
+                                            y: { beginAtZero: true, ...(chartData.yMax ? { max: chartData.yMax } : {}), title: { display: true, text: chartData.yLabel }, grid: { color: 'rgba(0,0,0,0.05)' } },
+                                            x: { title: { display: true, text: chartData.xLabel || 'Time' }, grid: { display: false } }
+                                        }
+                                    }
+                                });
+                            }
+                        }">
                         <canvas x-ref="overviewDowntimeCanvas" style="width: 100%; height: 100%;"></canvas>
                     </div>
                 </div>
@@ -340,14 +381,39 @@
                         this.createResponseTimeChart();
                         this.createDowntimeChart();
                     });
+            
+                    Livewire.on('siteChartsUpdated', (data) => {
+                        const payload = data[0];
+                        if (payload.responseTimeData) {
+                            this.updateResponseChart(payload.responseTimeData);
+                        }
+                        if (payload.downtimeData) {
+                            this.updateDowntimeChart(payload.downtimeData);
+                        }
+                    });
+                },
+            
+                updateResponseChart(chartData) {
+                    if (this.responseChart) { this.responseChart.destroy(); }
+                    this.createResponseChartWithData(chartData);
+                },
+            
+                updateDowntimeChart(chartData) {
+                    if (this.downtimeChart) { this.downtimeChart.destroy(); }
+                    this.createDowntimeChartWithData(chartData);
+                    const badge = document.getElementById('siteDowntimeTotalBadge');
+                    if (badge) badge.textContent = 'Total: ' + chartData.totalHours;
                 },
             
                 createResponseTimeChart() {
+                    const chartData = @js($siteData['responseTimeData']);
+                    this.createResponseChartWithData(chartData);
+                },
+            
+                createResponseChartWithData(chartData) {
                     const ctx = this.$refs.responseTimeCanvas;
                     if (!ctx) return;
                     if (this.responseChart) { this.responseChart.destroy(); }
-            
-                    const chartData = @js($siteData['responseTimeData']);
             
                     this.responseChart = new Chart(ctx, {
                         type: 'line',
@@ -384,7 +450,7 @@
                                     grid: { color: 'rgba(0,0,0,0.05)' }
                                 },
                                 x: {
-                                    title: { display: true, text: 'Time (last 24 hours)' },
+                                    title: { display: true, text: chartData.xLabel || 'Time' },
                                     grid: { display: false }
                                 }
                             }
@@ -393,18 +459,21 @@
                 },
             
                 createDowntimeChart() {
+                    const chartData = @js($siteData['downtimeData']);
+                    this.createDowntimeChartWithData(chartData);
+                },
+            
+                createDowntimeChartWithData(chartData) {
                     const ctx = this.$refs.downtimeCanvas;
                     if (!ctx) return;
                     if (this.downtimeChart) { this.downtimeChart.destroy(); }
-            
-                    const chartData = @js($siteData['downtimeData']);
             
                     this.downtimeChart = new Chart(ctx, {
                         type: 'bar',
                         data: {
                             labels: chartData.labels,
                             datasets: [{
-                                label: 'Downtime (hours)',
+                                label: 'Downtime (' + chartData.unit + ')',
                                 data: chartData.data,
                                 backgroundColor: '#DC2626',
                                 borderColor: '#DC2626',
@@ -419,19 +488,19 @@
                                 legend: { display: false },
                                 tooltip: {
                                     callbacks: {
-                                        label: (ctx) => ctx.parsed.y.toFixed(2) + ' hours'
+                                        label: (ctx) => ctx.parsed.y.toFixed(2) + ' ' + chartData.unit
                                     }
                                 }
                             },
                             scales: {
                                 y: {
                                     beginAtZero: true,
-                                    max: 24,
-                                    title: { display: true, text: 'Hours per day' },
+                                    ...(chartData.yMax ? { max: chartData.yMax } : {}),
+                                    title: { display: true, text: chartData.yLabel },
                                     grid: { color: 'rgba(0,0,0,0.05)' }
                                 },
                                 x: {
-                                    title: { display: true, text: 'Last 30 days' },
+                                    title: { display: true, text: chartData.xLabel || 'Time' },
                                     grid: { display: false }
                                 }
                             }
@@ -604,12 +673,22 @@
             </div>
 
             {{-- Charts Section --}}
-            <div class="px-6 py-4 border-t border-base-200" wire:ignore>
+            <div class="px-6 py-4 border-t border-base-200">
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {{-- Response Time Chart --}}
                     <div>
-                        <h3 class="text-sm font-semibold text-base-content/70 mb-3">Response Time (Last 24 Hours)</h3>
-                        <div class="bg-base-200/50 rounded-lg p-4" style="height: 280px;">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-sm font-semibold text-base-content/70">Response Time</h3>
+                            <div class="join">
+                                @foreach (['1D', '3D', '7D', '1M', '3M', '6M', '1Y'] as $filter)
+                                    <button wire:click="$set('siteResponseTimeFilter', '{{ $filter }}')"
+                                        class="join-item btn btn-xs {{ $siteResponseTimeFilter === $filter ? 'btn-primary' : 'btn-ghost' }}">
+                                        {{ $filter }}
+                                    </button>
+                                @endforeach
+                            </div>
+                        </div>
+                        <div class="bg-base-200/50 rounded-lg p-4" style="height: 280px;" wire:ignore>
                             <canvas x-ref="responseTimeCanvas" style="width: 100%; height: 100%;"></canvas>
                         </div>
                     </div>
@@ -617,12 +696,22 @@
                     {{-- Downtime Chart --}}
                     <div>
                         <div class="flex items-center justify-between mb-3">
-                            <h3 class="text-sm font-semibold text-base-content/70">Downtime (Last 30 Days)</h3>
-                            <span class="badge badge-error badge-sm">
-                                Total: {{ $siteData['downtimeData']['totalHours'] }}h
-                            </span>
+                            <h3 class="text-sm font-semibold text-base-content/70">Downtime</h3>
+                            <div class="flex items-center gap-2">
+                                <span class="badge badge-error badge-sm" id="siteDowntimeTotalBadge">
+                                    Total: {{ $siteData['downtimeData']['totalHours'] }}
+                                </span>
+                                <div class="join">
+                                    @foreach (['1D', '3D', '7D', '1M', '3M', '6M', '1Y'] as $filter)
+                                        <button wire:click="$set('siteDowntimeFilter', '{{ $filter }}')"
+                                            class="join-item btn btn-xs {{ $siteDowntimeFilter === $filter ? 'btn-primary' : 'btn-ghost' }}">
+                                            {{ $filter }}
+                                        </button>
+                                    @endforeach
+                                </div>
+                            </div>
                         </div>
-                        <div class="bg-base-200/50 rounded-lg p-4" style="height: 280px;">
+                        <div class="bg-base-200/50 rounded-lg p-4" style="height: 280px;" wire:ignore>
                             <canvas x-ref="downtimeCanvas" style="width: 100%; height: 100%;"></canvas>
                         </div>
                     </div>
