@@ -9,6 +9,7 @@ use App\Models\Site;
 use App\Services\MonitoringServiceInterface;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -868,13 +869,16 @@ class Dashboard extends Component
 
     /**
      * Get overview chart data (response time and downtime) with independent time filters.
+     * Cached for 60 seconds to reduce query load during polling.
      */
     public function getOverviewChartDataProperty(): array
     {
-        return [
+        $cacheKey = "overview_chart_{$this->overviewSiteFilter}_{$this->responseTimeFilter}_{$this->downtimeFilter}";
+
+        return Cache::remember($cacheKey, 60, fn() => [
             'response' => $this->getResponseTimeChartDataFiltered(),
             'downtime' => $this->getDowntimeChartDataFiltered(),
-        ];
+        ]);
     }
 
     /**
@@ -1169,12 +1173,11 @@ class Dashboard extends Component
 
     /**
      * Get list of down sites per time bucket for the overview downtime chart tooltip.
-     * Returns an array of arrays, where each inner array has site names that were down in that bucket.
+     * Uses a single query to fetch all down check results, then groups by bucket.
      */
     private function getDownSitesPerBucket(array $labels): array
     {
         $now = Carbon::now();
-        $downSites = [];
         $siteNames = Site::pluck('name', 'id')->toArray();
 
         // Rebuild the same buckets based on the filter
@@ -1224,17 +1227,35 @@ class Dashboard extends Component
                 break;
         }
 
+        // Single query: fetch all down results across the entire time range
+        $overallStart = $buckets[0][0];
+        $overallEnd = end($buckets)[1];
+
+        $query = CheckResult::where('checked_at', '>=', $overallStart)
+            ->where('checked_at', '<', $overallEnd)
+            ->whereRaw('(http_code = 0 OR http_code < 200 OR http_code >= 400)')
+            ->select('site_id', 'checked_at');
+
+        if ($this->overviewSiteFilter) {
+            $query->where('site_id', $this->overviewSiteFilter);
+        }
+
+        $allDownResults = $query->get();
+
+        // Group into buckets
+        $downSites = [];
         foreach ($buckets as [$bucketStart, $bucketEnd]) {
-            $query = CheckResult::where('checked_at', '>=', $bucketStart)
-                ->where('checked_at', '<', $bucketEnd)
-                ->whereRaw('(http_code = 0 OR http_code < 200 OR http_code >= 400)');
+            $bucketStartTs = $bucketStart->timestamp;
+            $bucketEndTs = $bucketEnd->timestamp;
 
-            if ($this->overviewSiteFilter) {
-                $query->where('site_id', $this->overviewSiteFilter);
-            }
+            $siteIdsInBucket = $allDownResults
+                ->filter(fn($r) => Carbon::parse($r->checked_at)->timestamp >= $bucketStartTs
+                    && Carbon::parse($r->checked_at)->timestamp < $bucketEndTs)
+                ->pluck('site_id')
+                ->unique()
+                ->toArray();
 
-            $downSiteIds = $query->distinct()->pluck('site_id')->toArray();
-            $names = array_values(array_intersect_key($siteNames, array_flip($downSiteIds)));
+            $names = array_values(array_intersect_key($siteNames, array_flip($siteIdsInBucket)));
             $downSites[] = $names;
         }
 
@@ -1306,14 +1327,43 @@ class Dashboard extends Component
         $sites = $this->getSites();
         $categories = Category::orderBy('name')->get();
 
-        // Pre-compute 24h avg response times and latest HTTP codes for all displayed sites
-        $siteMetrics = [];
-        foreach ($sites as $site) {
-            $siteMetrics[$site->id] = [
-                'avg_response_time_24h' => $this->getSiteAvgResponseTime24h($site->id),
-                'latest_http_code' => $this->getSiteLatestHttpCode($site->id),
-            ];
-        }
+        // Batch-compute metrics for all displayed sites in 2 queries instead of 2×N
+        $siteIds = $sites->pluck('id')->toArray();
+        $siteMetrics = Cache::remember(
+            'site_metrics_' . md5(implode(',', $siteIds)),
+            30,
+            function () use ($siteIds) {
+                $since = Carbon::now()->subHours(24);
+
+                // Batch avg response times
+                $avgTimes = CheckResult::whereIn('site_id', $siteIds)
+                    ->where('checked_at', '>=', $since)
+                    ->where('error_type', 'none')
+                    ->where('response_time_ms', '>', 0)
+                    ->selectRaw('site_id, AVG(response_time_ms) as avg_ms')
+                    ->groupBy('site_id')
+                    ->pluck('avg_ms', 'site_id');
+
+                // Batch latest HTTP codes (get the most recent check per site)
+                $latestCodes = CheckResult::whereIn('site_id', $siteIds)
+                    ->whereIn('id', function ($query) use ($siteIds) {
+                        $query->selectRaw('MAX(id)')
+                            ->from('check_results')
+                            ->whereIn('site_id', $siteIds)
+                            ->groupBy('site_id');
+                    })
+                    ->pluck('http_code', 'site_id');
+
+                $metrics = [];
+                foreach ($siteIds as $id) {
+                    $metrics[$id] = [
+                        'avg_response_time_24h' => round((float) ($avgTimes[$id] ?? 0), 1),
+                        'latest_http_code' => $latestCodes[$id] ?? null,
+                    ];
+                }
+                return $metrics;
+            }
+        );
 
         return view('livewire.dashboard', [
             'sites' => $sites,
