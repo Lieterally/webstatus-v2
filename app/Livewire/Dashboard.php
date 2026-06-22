@@ -100,6 +100,7 @@ class Dashboard extends Component
      */
     public function updatedOverviewSiteFilter(): void
     {
+        // Invalidate cache for old filter combination
         $this->dispatch('overviewChartsUpdated', $this->overviewChartData);
     }
 
@@ -300,6 +301,7 @@ class Dashboard extends Component
 
     /**
      * Get detailed data for the selected site including pages, charts, and down info.
+     * Cached for 30 seconds to avoid expensive recalculation on every poll.
      */
     public function getSelectedSiteDataProperty(): ?array
     {
@@ -314,20 +316,23 @@ class Dashboard extends Component
             return null;
         }
 
-        // Get latest check results for each page
+        // Get latest check results for each page (cheap, small query)
         $pageResults = $this->getLatestPageResults($site);
 
-        // Get response time chart data (filtered)
-        $responseTimeData = $this->getSiteResponseTimeFiltered();
+        // Get response time chart data (cached via the method itself)
+        $cacheKey = "site_response_{$this->selectedSiteId}_{$this->siteResponseTimeFilter}";
+        $responseTimeData = Cache::remember($cacheKey, 60, fn() => $this->getSiteResponseTimeFiltered());
 
-        // Get downtime chart data (filtered)
-        $downtimeData = $this->getSiteDowntimeFiltered();
+        // Get downtime chart data (cached)
+        $cacheKey = "site_downtime_{$this->selectedSiteId}_{$this->siteDowntimeFilter}";
+        $downtimeData = Cache::remember($cacheKey, 60, fn() => $this->getSiteDowntimeFiltered());
 
-        // Calculate down duration if site is down
+        // Calculate down duration if site is down (cheap)
         $downInfo = $this->getDownInfo($site);
 
-        // Get downtime history (last 30 days of outage events)
-        $downtimeHistory = $this->getDowntimeHistory($site);
+        // Get downtime history (cached)
+        $cacheKey = "site_history_{$this->selectedSiteId}";
+        $downtimeHistory = Cache::remember($cacheKey, 60, fn() => $this->getDowntimeHistory($site));
 
         return [
             'site' => $site,

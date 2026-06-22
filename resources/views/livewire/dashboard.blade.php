@@ -1,4 +1,4 @@
-<div wire:poll.2s="poll" x-data="{
+<div wire:poll.5s="poll" x-data="{
     countdown: @entangle('countdownSeconds'),
     cycleInProgress: @entangle('cycleInProgress'),
     cycleIntervalSeconds: @entangle('cycleIntervalSeconds'),
