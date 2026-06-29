@@ -5,28 +5,35 @@ Website monitoring system for Institut Teknologi Kalimantan (ITK). Performs auto
 ## Features
 
 - Automated monitoring cycles with configurable interval (5–1440 minutes)
-- Concurrent HTTP checks with configurable timeouts and concurrency
-- Real-time dashboard with live countdown, charts, and status cards
-- Live checking log drawer showing per-page results in real-time
-- Telegram bot notifications (consolidated down alerts, recovery alerts)
-- Per-site and bulk refresh with async background processing
-- Role-based access (Admin, Super Admin)
-- Site detail view with response time and downtime charts
-- Searchable site filtering with Tom Select
-- System self-health monitoring (alerts on consecutive cycle failures)
+- Concurrent HTTP checks with configurable timeouts and concurrency (batch-based)
+- Automatic retry of down sites within each cycle to reduce false positives
+- Real-time dashboard with live countdown, charts, and status cards (card + table views)
+- Live checking log drawer showing per-page results in real-time during cycles
+- Telegram bot notifications (consolidated down alerts, recovery alerts, system health alerts)
+- Per-site and bulk refresh with async background processing (non-blocking `popen`)
+- Role-based access (Admin, Super Admin) with configurable session timeout
+- Site detail view with response time and downtime charts (7 time filters: 1D/3D/7D/1M/3M/6M/1Y)
+- Overview charts with per-site filtering via Tom Select
+- Category management (CRUD) for organizing monitored sites
+- Downtime history log showing outage windows per site (last 30 days)
+- System self-health monitoring (alerts on 3 consecutive cycle failures)
+- Pagination and search/filter on dashboard site list
 
 ## Tech Stack
 
 - **Backend**: Laravel 13, PHP 8.3+
-- **Frontend**: Blade, Livewire, Alpine.js, Tailwind CSS v4, DaisyUI
+- **Frontend**: Blade, Livewire 4, Alpine.js, Tailwind CSS v4, DaisyUI
+- **Icons**: Font Awesome Pro (all variants)
 - **Charts**: Chart.js
 - **Select UI**: Tom Select
 - **Database**: SQLite (dev) / MySQL (production)
 - **Notifications**: Telegram Bot API
+- **Testing**: Pest PHP 4 (unit, feature, property-based tests)
+- **Dev Tools**: Laravel Telescope, Laravel Pail, Laravel Pint
 
 ## Requirements
 
-- PHP 8.2+
+- PHP 8.3+
 - Composer
 - Node.js 18+
 - SQLite or MySQL
@@ -54,6 +61,12 @@ php artisan migrate --seed
 php artisan serve
 ```
 
+Or use the all-in-one dev script (serves app, queue, logs, and Vite concurrently):
+
+```bash
+composer dev
+```
+
 ## Configuration
 
 Edit `.env` for:
@@ -63,15 +76,30 @@ APP_URL=http://localhost:8000
 DB_CONNECTION=sqlite
 
 TELEGRAM_BOT_TOKEN=your-bot-token-here
+TELEGRAM_WEBHOOK_SECRET=your-random-secret
 ```
 
-Health check settings (connection timeout, response timeout, concurrency) are configurable from the System Config page in the admin panel.
+### System Config (Admin Panel)
+
+Health check and notification settings are configurable from the System Config page (Super Admin only):
+
+| Setting | Default (seeder) | Range |
+|---------|------------------|-------|
+| Cycle Interval | 10 minutes | 5–1440 min |
+| Notification Cycle Threshold | 6 cycles | 1–100 |
+| False Positive Threshold | 3 cycles | Fixed |
+| Session Timeout | 30 minutes | 5–480 min |
+| Connection Timeout | 10 seconds | 1–60 sec |
+| Response Timeout | 25 seconds | 5–120 sec |
+| Concurrency Limit | 30 requests | 5–100 |
 
 ## Running the Monitoring Cycle
 
 ### Local Development (Windows/Laragon)
 
-The dashboard auto-triggers cycles via Livewire polling — just open the dashboard. Or run manually:
+The dashboard auto-triggers cycles via Livewire polling — just open the dashboard. When the countdown reaches 0, a background process is spawned automatically via `popen` (no cron needed).
+
+Or run manually:
 
 ```bash
 php artisan app:run-monitoring-cycle
@@ -91,20 +119,28 @@ See the [VPS Deployment Guide](#vps-deployment-guide) section below.
 
 | Command | Description |
 |---------|-------------|
-| `/start` | Welcome message |
-| `/help` | List commands |
-| `/chat_id` | Get your chat ID |
-| `/recepient` | Register as notification recipient |
+| `/start` | Welcome message with bot info and command list |
+| `/help` | List all available commands |
+| `/chat_id` | Get your Telegram chat ID |
+| `/recepient` | Self-register as notification recipient |
 | `/subscribe` | Activate notifications |
 | `/unsubscribe` | Deactivate notifications |
 | `/down` | List currently down sites |
-| `/refresh` | Trigger manual refresh |
+| `/refresh` | Trigger manual refresh cycle |
 
 ## Default Credentials
 
 After seeding:
 
 - **Super Admin**: `super_admin` / `password`
+
+## Running Tests
+
+```bash
+php artisan test
+```
+
+Tests include unit tests, feature tests, and property-based tests covering all correctness properties.
 
 ## License
 

@@ -17,15 +17,18 @@ Webstatus-V2 is a website monitoring system for Institut Teknologi Kalimantan (I
 | Layer | Technology | Rationale |
 |-------|-----------|-----------|
 | Backend | Laravel 13 (PHP 8.3+) | Project runs on Laragon; Laravel 13 is the latest stable release with improved performance, scheduling, queues, HTTP client, and robust ORM |
-| Frontend | Blade + Livewire + Alpine.js | Server-rendered with real-time reactivity; simpler than SPA for this use case |
-| CSS | Tailwind CSS v4 | Rapid UI development with ITK brand color customization, responsive utilities |
+| Frontend | Blade + Livewire 4 + Alpine.js | Server-rendered with real-time reactivity; simpler than SPA for this use case |
+| CSS | Tailwind CSS v4 + DaisyUI | Rapid UI development with ITK brand color customization, responsive utilities, pre-built component styles |
+| Icons | Font Awesome Pro (all variants) | Comprehensive icon set loaded locally (not CDN) |
 | Database | MySQL 8.0 | Available in Laragon, handles relational data well |
-| HTTP Client | Laravel HTTP Client (Guzzle) | Concurrent async requests with timeout support |
+| HTTP Client | Laravel HTTP Client (Guzzle) | Concurrent async requests with timeout support via Http::pool() |
 | Background Jobs | Laravel Scheduler + Queue (database driver) | Reliable cycle execution without external dependencies |
 | Telegram | Telegram Bot API via HTTP | Direct API calls for notifications and command handling |
 | Charts | Chart.js | Lightweight charting for response time and downtime graphs |
 | Select UI | Tom Select | Searchable dropdown for site filtering (60+ sites) |
-| Real-time Updates | Livewire polling (2s interval) | Simple polling for dashboard updates without WebSocket complexity |
+| Real-time Updates | Livewire wire:poll.2s | Simple 2-second polling for dashboard updates without WebSocket complexity |
+| Testing | Pest PHP 4 | Modern PHP testing with property-based testing support |
+| Dev Tools | Laravel Telescope, Laravel Pail, Laravel Pint | Debugging, log streaming, code formatting |
 
 ## UI Design System
 
@@ -168,27 +171,35 @@ sequenceDiagram
     MonitoringService->>DB: Get all sites with pages
     MonitoringService->>HealthCheckService: checkAllSites(sites)
     
-    par Concurrent HTTP checks
+    par Concurrent HTTP checks (batched by concurrency limit)
         HealthCheckService->>Sites: HTTP GET /page1
         HealthCheckService->>Sites: HTTP GET /page2
         HealthCheckService->>Sites: HTTP GET /pageN
     end
 
     HealthCheckService-->>MonitoringService: CheckResults[]
-    MonitoringService->>MonitoringService: determineStatus(results)
-    MonitoringService->>DB: persistResults(results)
-    MonitoringService->>DB: updateConsecutiveDownCounts()
     
-    MonitoringService->>NotificationService: evaluateNotifications(sites)
+    Note over MonitoringService: Retry sites with failing pages
+    MonitoringService->>HealthCheckService: checkAllSites(downSites)
+    HealthCheckService-->>MonitoringService: RetryResults[]
+    MonitoringService->>MonitoringService: mergeResults(original, retry)
     
-    alt consecutiveDown >= 3 AND not yet notified
-        NotificationService->>Telegram: sendDownNotification()
+    MonitoringService->>NotificationService: evaluateAndNotify(results)
+    
+    alt consecutiveDown reaches 3 (initial alert)
+        NotificationService->>Telegram: sendConsolidatedDownNotification()
+    end
+    
+    alt global timer reaches threshold (repeat alert)
+        NotificationService->>Telegram: sendConsolidatedDownNotification()
     end
     
     alt site recovered AND was notified
         NotificationService->>Telegram: sendRecoveryNotification()
     end
 
+    MonitoringService->>MonitoringService: determineStatus + updateSiteStatus for each site
+    MonitoringService->>DB: persistResults(results)
     MonitoringService->>DB: updateCycleTimestamp()
 </sequenceDiagram>
 ```
@@ -199,15 +210,41 @@ The system runs as a single Laravel application with two deployment modes:
 
 **Production (Linux server):**
 - **Cron Job**: `* * * * * php artisan schedule:run` — triggers cycle at configured interval
-- **Queue Worker**: `php artisan queue:work` as a systemd service — processes notification jobs
+- **Queue Worker**: `php artisan queue:work` via Supervisor — processes notification jobs
 - **Telegram Webhook**: Receives bot commands via HTTPS webhook endpoint
+- **System Health**: `RunMonitoringCycleCommand` tracks consecutive failures, sends alert at 3
 
 **Local Development (Windows/Laragon):**
-- **Livewire Poll Fallback**: The dashboard's 2-second polling auto-triggers the cycle via `popen` when countdown expires (no cron needed)
+- **Livewire Poll Auto-Trigger**: The dashboard's 2-second polling auto-triggers the cycle via `popen` background process when countdown expires (no cron needed). Uses a `Cache::lock` to prevent duplicate spawning.
 - **Scheduler Daemon**: Alternative via `php artisan schedule:daemon` (loops every 60s)
 - **Telegram Long Polling**: `php artisan telegram:poll` for local bot testing without webhook
+- **Composer dev script**: `composer dev` runs server, queue, logs, and Vite concurrently via npx concurrently
 
 ## Components and Interfaces
+
+### 0. Console Commands
+
+#### RunMonitoringCycleCommand (`app:run-monitoring-cycle`)
+
+The primary entry point for executing monitoring cycles. Called by the scheduler, the Livewire dashboard (via `popen`), and the Telegram `/refresh` command.
+
+```php
+class RunMonitoringCycleCommand extends Command
+{
+    protected $signature = 'app:run-monitoring-cycle';
+}
+```
+
+**Responsibilities:**
+- Calls `MonitoringService::executeCycle()`
+- Persists `last_cycle_run_at` timestamp on success
+- Resets `consecutive_cycle_failures` counter on success
+- On failure: logs error with cycle identifier, increments `consecutive_cycle_failures`
+- When `consecutive_cycle_failures` reaches exactly 3: broadcasts a system health alert to all active Telegram targets (only sent once at the threshold)
+
+#### SchedulerDaemon (`schedule:daemon`)
+
+Infinite-loop replacement for cron on Windows/Laragon. Runs `schedule:run` every 60 seconds.
 
 ### 1. Monitoring Service (`App\Services\MonitoringService`)
 
@@ -236,6 +273,14 @@ interface MonitoringServiceInterface
 }
 ```
 
+**Implementation Notes:**
+- Uses a cache-based lock (`monitoring_cycle_in_progress`) with 5-minute TTL as safety net
+- **Retry mechanism**: After the initial check, any site with at least one failing page is automatically retried once. The retry result replaces the original. A `--- RETRY CYCLE ---` separator is appended to the live log.
+- Evaluates notifications BEFORE updating site statuses (NotificationService needs previous status to detect transitions)
+- Updates `last_cycle_completed_at` and `last_cycle_run_at` in system_configs on cycle completion
+- Individual site refresh (`refreshSite`) does NOT reset the global countdown timer
+- Cycle interval validation: rejects values outside [5, 1440] with `InvalidArgumentException`
+
 ### 2. Health Check Service (`App\Services\HealthCheckService`)
 
 Executes concurrent HTTP requests to all site pages and returns raw results.
@@ -253,12 +298,14 @@ interface HealthCheckServiceInterface
 
 **Implementation Notes:**
 - Uses Laravel HTTP Client pool for concurrent requests
-- Connection timeout: configurable via `system_configs.connection_timeout_seconds` (default 20s)
-- Response timeout: configurable via `system_configs.response_timeout_seconds` (default 50s)
-- Concurrency limit: configurable via `system_configs.concurrency_limit` (default 50)
+- Connection timeout: configurable via `system_configs.connection_timeout_seconds` (seeder default 10s, range 1–60s)
+- Response timeout: configurable via `system_configs.response_timeout_seconds` (seeder default 25s, range 5–120s)
+- Concurrency limit: configurable via `system_configs.concurrency_limit` (seeder default 30, range 5–100)
 - Processes requests in batches of the concurrency limit to avoid overwhelming OS connections and DNS
 - Writes live log entries to cache (`monitoring_cycle_live_log`) as each page is checked, enabling real-time progress visibility in the dashboard
 - SSL verification is disabled (`'verify' => false`) to allow monitoring sites with invalid/self-signed certificates
+- Error classification: ConnectException → ConnectionFailure or DnsFailure or Timeout based on message content
+- Response time measured via Guzzle transfer stats (`getTransferTime()`)
 
 ### 3. Status Determination Service (`App\Services\StatusDeterminationService`)
 
@@ -313,6 +360,9 @@ interface NotificationServiceInterface
 - **Consolidated down messages**: Instead of per-site notifications, the system queries ALL currently down sites and sends a single message listing all of them in a numbered table format (name, base URL, down since)
 - **No page-level detail**: Down notifications only include the site base URL, not individual page paths
 - **Accumulative**: If site A is down and site B goes down later, the next notification includes both A and B
+- **Global notification timer**: Instead of per-site repeat tracking, a global counter (`global_notification_counter` in system_configs) is incremented each cycle while any site has `notification_sent=true`. When it reaches the threshold, a consolidated repeat notification is sent and the counter resets.
+- **Recovery resets**: On recovery, the site's `consecutive_down_count`, `notification_sent`, `notification_cycle_counter`, and `first_down_at` are all reset
+- **Status change within down states**: Transitions between partially_down and totally_down while at/above threshold are handled by the global timer, not individual site tracking
 
 ### 5. Telegram Bot Service (`App\Services\TelegramBotService`)
 
@@ -368,6 +418,62 @@ interface AuthServiceInterface
 }
 ```
 
+### 8. Category Controller (`App\Http\Controllers\CategoryController`)
+
+Full CRUD for managing site categories. Accessible by both Admin and Super_Admin roles.
+
+**Routes:**
+- `GET /categories` — List all categories with site counts
+- `GET /categories/create` — Show create form
+- `POST /categories` — Store new category (validates unique name, max 255 chars)
+- `GET /categories/{id}/edit` — Show edit form
+- `PUT /categories/{id}` — Update category
+- `DELETE /categories/{id}` — Delete category (prevented if category has associated sites)
+- `GET /categories-list` — JSON endpoint for AJAX dropdowns
+
+### 9. System Config Controller (`App\Http\Controllers\SystemConfigController`)
+
+Manages system-wide configuration. Accessible by Super_Admin only.
+
+**Routes:**
+- `GET /system-config` — Display configuration form
+- `PUT /system-config` — Update all configuration values
+
+**Validated fields:**
+- `cycle_interval_minutes`: integer, 5–1440
+- `notification_cycle_threshold`: integer, 1–100
+- `connection_timeout_seconds`: integer, 1–60
+- `response_timeout_seconds`: integer, 5–120
+- `concurrency_limit`: integer, 5–100
+
+### Route Structure
+
+```
+Public:
+  GET  /                    → Redirect to /login
+  POST /telegram/webhook    → TelegramWebhookController (throttle:60,1)
+
+Guest only:
+  GET  /login               → LoginController@showLoginForm
+  POST /login               → LoginController@login (throttle:5,1)
+
+Auth (role:admin) — both Admin and Super_Admin:
+  POST /logout
+  GET  /dashboard
+  Resource: sites (except show)
+  Resource: categories (except show)
+  GET  /categories-list (JSON)
+  GET  /profile/password
+  PUT  /profile/password
+
+Auth (role:super_admin) — Super_Admin only:
+  Resource: users (except show)
+  Resource: it-staff (except show)
+  Resource: telegram-targets (except show)
+  GET  /system-config
+  PUT  /system-config
+```
+
 ### 7. Dashboard Component (`App\Livewire\Dashboard`)
 
 Livewire component providing real-time dashboard with polling.
@@ -376,10 +482,14 @@ Livewire component providing real-time dashboard with polling.
 // Livewire component with 2-second polling
 class Dashboard extends Component
 {
+    use WithPagination;
+
     public function mount(): void;          // Load initial state
     public function poll(): void;           // 2s polling: update UI state, auto-trigger cycle when countdown expires
     public function refreshAll(): void;     // Trigger manual refresh (async via background process)
     public function refreshSite(int $id): void;  // Trigger single site refresh (synchronous)
+    public function selectSite(int $id): void;   // Open detailed site view
+    public function closeSiteDetail(): void;     // Close detailed site view
     public function toggleLogDrawer(): void; // Toggle live log side drawer
     public function render(): View;         // Render dashboard view
 }
@@ -387,10 +497,18 @@ class Dashboard extends Component
 
 **Key Behaviors:**
 - `refreshAll()` spawns the monitoring cycle as a background process via `popen` (non-blocking) — the UI returns immediately and updates when the cycle completes
-- `poll()` detects cycle completion by watching `lastCycleDatetime` changes, resets `isRefreshing` flag, and pushes updated chart data
-- Auto-trigger logic in `poll()` spawns the cycle via `popen` when countdown reaches 0 (fallback for environments without cron)
+- `poll()` detects cycle completion by watching `lastCycleDatetime` changes, resets `isRefreshing` flag, and pushes updated chart data via `dispatch('overviewChartsUpdated', ...)`
+- Auto-trigger logic in `poll()` spawns the cycle via `popen` when countdown reaches 0, using a `Cache::lock('poll_cycle_trigger_lock', 120)` to prevent multiple polls from spawning duplicate processes
 - Live log drawer reads from cache (`monitoring_cycle_live_log`) during polling, showing real-time progress with site name, page URL, HTTP code, and response time
 - Overview charts use Tom Select for searchable site filtering
+- **Chart time filters**: Both overview and per-site charts support 7 filter options: 1D (hourly), 3D (6-hour intervals), 7D (daily), 1M (daily), 3M (weekly), 6M (weekly), 1Y (monthly)
+- **Site list pagination**: Sites are paginated (24 per page) with search, category filter, and status filter
+- **Batch metrics**: `render()` batch-computes avg response time (24h) and latest HTTP code for all displayed sites in 2 queries (cached 30s)
+- **Downtime calculation**: Cycle-based outage detection — groups check_results by cycle_id, measures outage windows between down→up transitions
+- **Site counts**: `sitesDown` counts only TotallyDown; `sitesUp` counts Up + PartiallyDown
+- **Downtime history**: Per-site outage log (last 30 days) showing from/to/pages/duration for each outage window
+- **Overview chart cache**: 60-second cache keyed by `overviewSiteFilter + responseTimeFilter + downtimeFilter`
+- **Downtime tooltip**: Each downtime chart bar includes the list of affected site names per bucket
 
 ### Component Interaction Diagram
 
@@ -398,11 +516,13 @@ class Dashboard extends Component
 graph LR
     subgraph "Controllers"
         SiteCtrl[SiteController]
+        CatCtrl[CategoryController]
         UserCtrl[UserController]
         StaffCtrl[ITStaffController]
         TeleCtrl[TelegramTargetController]
         AuthCtrl[AuthController]
         BotCtrl[TelegramWebhookController]
+        ConfigCtrl[SystemConfigController]
     end
 
     subgraph "Services"
@@ -417,6 +537,7 @@ graph LR
     subgraph "Models"
         Site[Site]
         Page[Page]
+        Category[Category]
         CheckResult[CheckResult]
         User[User]
         Staff[ITStaff]
@@ -425,6 +546,8 @@ graph LR
     end
 
     SiteCtrl --> MonSvc
+    ConfigCtrl --> MonSvc
+    ConfigCtrl --> NotifSvc
     BotCtrl --> BotSvc
     BotSvc --> MonSvc
     MonSvc --> CheckSvc
@@ -435,6 +558,7 @@ graph LR
 
     CheckSvc --> Site
     CheckSvc --> Page
+    CatCtrl --> Category
     MonSvc --> CheckResult
     MonSvc --> Config
     NotifSvc --> Target
@@ -616,13 +740,14 @@ class CheckResult extends Model
 | `cycle_interval_minutes` | 10 | Minutes between checking cycles |
 | `notification_cycle_threshold` | 6 | Cycles between repeated notifications |
 | `false_positive_threshold` | 3 | Consecutive down cycles before notification |
-| `session_timeout_minutes` | 30 | Session inactivity timeout |
-| `connection_timeout_seconds` | 20 | Max seconds to establish TCP connection per request |
-| `response_timeout_seconds` | 50 | Max seconds to wait for HTTP response after connecting |
-| `concurrency_limit` | 50 | Max simultaneous HTTP requests per batch (range: 5–100) |
+| `session_timeout_minutes` | 30 | Session inactivity timeout (range 5–480) |
+| `connection_timeout_seconds` | 10 | Max seconds to establish TCP connection per request (range 1–60) |
+| `response_timeout_seconds` | 25 | Max seconds to wait for HTTP response after connecting (range 5–120) |
+| `concurrency_limit` | 30 | Max simultaneous HTTP requests per batch (range: 5–100) |
 | `last_cycle_completed_at` | null | Timestamp of last successful cycle completion |
 | `last_cycle_run_at` | null | Timestamp synced with scheduler to prevent double-triggering |
 | `consecutive_cycle_failures` | 0 | Counter for consecutive cycle crashes; triggers system health alert at 3 |
+| `global_notification_counter` | 0 | Global timer for consolidated repeat notifications; resets after sending |
 
 
 ## Correctness Properties

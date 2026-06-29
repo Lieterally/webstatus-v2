@@ -9,6 +9,7 @@ Webstatus-V2 is a website monitoring system for Kalimantan Institute of Technolo
 - **Monitoring_System**: The background service that performs periodic HTTP health checks on defined website pages and determines availability status
 - **Dashboard**: The main web interface displaying real-time monitoring data including site statuses, response times, and historical graphs
 - **Website_Manager**: The CRUD interface for managing monitored sites, their pages, categories, and responsible persons
+- **Category_Manager**: The CRUD interface for managing site categories, accessible by both Admin and Super_Admin roles
 - **User_Manager**: The administrative interface for managing user accounts and roles
 - **IT_Staff_Manager**: The administrative interface for managing IT staff records
 - **Telegram_Manager**: The administrative interface for managing Telegram notification targets
@@ -38,10 +39,10 @@ Webstatus-V2 is a website monitoring system for Kalimantan Institute of Technolo
 2. THE Monitoring_System SHALL continue executing checking cycles regardless of whether any user is logged into the web interface
 3. WHEN a checking cycle completes, THE Monitoring_System SHALL reset the countdown timer to the configured cycle interval
 4. IF a user attempts to configure a cycle interval of less than 5 minutes or greater than 1440 minutes, THEN THE Monitoring_System SHALL reject the value and retain the previously configured interval
-5. WHEN a checking cycle is initiated, THE Monitoring_System SHALL complete all HTTP checks for all defined sites within 10 seconds
-6. IF the HTTP checks cannot complete within 10 seconds, THEN THE Monitoring_System SHALL terminate remaining pending checks, record the sites with incomplete checks as unreachable, and proceed with cycle completion
-7. THE Monitoring_System SHALL record the datetime of each completed checking cycle
-8. IF an individual HTTP check fails due to network error or timeout, THEN THE Monitoring_System SHALL continue processing the remaining sites in that cycle without interruption
+5. THE Monitoring_System SHALL use a cache-based lock with a 5-minute TTL to prevent concurrent cycle execution
+6. IF an individual HTTP check fails due to network error or timeout, THEN THE Monitoring_System SHALL continue processing the remaining sites in that cycle without interruption
+7. THE Monitoring_System SHALL record the datetime of each completed checking cycle in the `last_cycle_completed_at` and `last_cycle_run_at` system configuration keys
+8. THE Monitoring_System SHALL support two execution modes: scheduled (via Laravel scheduler/cron) and auto-triggered (via Livewire polling when countdown expires, spawned as a non-blocking background process)
 
 ### Requirement 2: HTTP Health Check Execution
 
@@ -49,12 +50,14 @@ Webstatus-V2 is a website monitoring system for Kalimantan Institute of Technolo
 
 #### Acceptance Criteria
 
-1. WHEN a checking cycle executes, THE Monitoring_System SHALL send an HTTP GET request to each defined page of every monitored site with a connection timeout of 10 seconds and a response timeout of 15 seconds
+1. WHEN a checking cycle executes, THE Monitoring_System SHALL send an HTTP GET request to each defined page of every monitored site with a configurable connection timeout (default 10 seconds, range 1–60) and a configurable response timeout (default 25 seconds, range 5–120)
 2. WHEN an HTTP response is received, THE Monitoring_System SHALL record the HTTP response code for that page
 3. WHEN an HTTP response is received, THE Monitoring_System SHALL record the response time in milliseconds for that page, measured from the moment the request is sent to the moment the full response headers are received
-4. IF a page request exceeds the 15-second response timeout or fails to establish a connection within 10 seconds, THEN THE Monitoring_System SHALL record the page as unreachable with a status code of 0 and an error indication distinguishing between timeout and connection failure
+4. IF a page request exceeds the response timeout or fails to establish a connection within the connection timeout, THEN THE Monitoring_System SHALL record the page as unreachable with a status code of 0 and an error indication distinguishing between timeout, connection failure, and DNS failure
 5. WHEN all page requests for a site have completed within a checking cycle, THE Monitoring_System SHALL calculate and store the average response time in milliseconds across all reachable pages for that site
 6. IF all pages of a site are unreachable within a checking cycle, THEN THE Monitoring_System SHALL record the site average response time as 0 milliseconds
+7. THE Monitoring_System SHALL process HTTP requests in batches limited by a configurable concurrency limit (default 30, range 5–100) to avoid overwhelming OS connections and DNS resolution
+8. THE Monitoring_System SHALL disable SSL/TLS certificate verification for all HTTP checks to allow monitoring sites with invalid or self-signed certificates
 
 ### Requirement 3: Site Availability Status Determination
 
@@ -102,13 +105,13 @@ Webstatus-V2 is a website monitoring system for Kalimantan Institute of Technolo
 #### Acceptance Criteria
 
 1. THE Dashboard SHALL display the total number of monitored sites
-2. THE Dashboard SHALL display the total number of sites with status "totally_down" or "partially_down"
-3. THE Dashboard SHALL display the total number of sites with status "up"
+2. THE Dashboard SHALL display the total number of sites with status "totally_down" as the "down" count
+3. THE Dashboard SHALL display the total number of sites with status "up" or "partially_down" as the "up" count
 4. THE Dashboard SHALL display the datetime of the most recent completed checking cycle in "YYYY-MM-DD HH:mm:ss" format using the server's local timezone
-5. THE Dashboard SHALL display a countdown timer showing time remaining until the next checking cycle, updating the displayed value every 1 second
-6. WHEN a checking cycle completes, THE Dashboard SHALL update all summary card values within 2 seconds
+5. THE Dashboard SHALL display a countdown timer showing time remaining until the next checking cycle, updating the displayed value every 1 second via Alpine.js client-side countdown
+6. WHEN a checking cycle completes, THE Dashboard SHALL update all summary card values within the next 2-second polling interval
 7. IF no checking cycle has been completed since system startup, THEN THE Dashboard SHALL display a "No data yet" indicator in place of the last cycle datetime and show counts as zero
-8. WHILE a manual refresh is in progress, THE Dashboard SHALL display the countdown timer in a paused state indicating that a manual refresh is running
+8. WHILE a manual refresh is in progress, THE Dashboard SHALL display a loading indicator on the refresh button and prevent duplicate requests
 
 ### Requirement 7: Dashboard Website List View
 
@@ -130,14 +133,14 @@ Webstatus-V2 is a website monitoring system for Kalimantan Institute of Technolo
 
 #### Acceptance Criteria
 
-1. WHEN a user selects a specific site, THE Dashboard SHALL display all defined pages for that site with individual HTTP response codes and response times in milliseconds
-2. WHEN a user selects a specific site, THE Dashboard SHALL display a response time graph with Y-axis representing seconds and X-axis representing the last 24 hours in 1-hour intervals
-3. WHEN a user selects a specific site, THE Dashboard SHALL display a downtime graph with Y-axis representing hours of downtime per day and X-axis representing the last 30 days
+1. WHEN a user selects a specific site, THE Dashboard SHALL display all defined pages for that site with individual HTTP response codes, response times in milliseconds, and error type
+2. WHEN a user selects a specific site, THE Dashboard SHALL display a response time graph with Y-axis representing seconds and X-axis showing time intervals based on the selected time filter (default: 1D with hourly intervals)
+3. WHEN a user selects a specific site, THE Dashboard SHALL display a downtime graph with Y-axis representing hours of downtime and X-axis showing time intervals based on the selected time filter (default: 7D with daily intervals)
 4. WHEN a site has status "totally_down" or "partially_down", THE Dashboard SHALL display the datetime when the down status was first detected
 5. WHEN a site has status "totally_down" or "partially_down", THE Dashboard SHALL display the duration the site has been down in the format "Xd Xh Xm" (days, hours, minutes)
 6. THE Dashboard SHALL provide a per-site "Refresh" button in the detailed view
-7. IF a site has fewer than 24 hours of monitoring data, THEN THE Dashboard SHALL display the response time graph using only the available data points and leave the remaining time range empty
-8. IF a site has no downtime history within the last 30 days, THEN THE Dashboard SHALL display the downtime graph with zero values for all dates
+7. IF a site has no monitoring data for the selected time range, THEN THE Dashboard SHALL display the chart with null values for missing data points
+8. THE Dashboard SHALL display a downtime history log showing outage windows from the last 30 days with start time, end time, affected pages, and duration
 
 ### Requirement 9: Website CRUD Management
 
@@ -313,8 +316,8 @@ Webstatus-V2 is a website monitoring system for Kalimantan Institute of Technolo
 
 #### Acceptance Criteria
 
-1. WHILE a user has the Admin role, THE Auth_System SHALL grant access to: Dashboard, Website_Manager, and profile settings, and SHALL deny access to: User_Manager, IT_Staff_Manager, and Telegram_Manager
-2. WHILE a user has the Super_Admin role, THE Auth_System SHALL grant access to: Dashboard, Website_Manager, User_Manager, IT_Staff_Manager, Telegram_Manager, and profile settings
+1. WHILE a user has the Admin role, THE Auth_System SHALL grant access to: Dashboard, Website_Manager, Category_Manager, and profile settings, and SHALL deny access to: User_Manager, IT_Staff_Manager, Telegram_Manager, and System Configuration
+2. WHILE a user has the Super_Admin role, THE Auth_System SHALL grant access to: Dashboard, Website_Manager, Category_Manager, User_Manager, IT_Staff_Manager, Telegram_Manager, System Configuration, and profile settings
 3. IF a user attempts to access a resource outside their permitted role, THEN THE Auth_System SHALL deny the request and redirect the user to the Dashboard with a message indicating unauthorized access
 4. WHEN a request is made to a protected resource, THE Auth_System SHALL verify the user's role permissions before granting access to that resource
 5. IF a user's role is changed by a Super_Admin, THEN THE Auth_System SHALL enforce the updated permissions no later than the user's next request
@@ -381,7 +384,7 @@ Webstatus-V2 is a website monitoring system for Kalimantan Institute of Technolo
 4. IF an unauthenticated request is made to a protected API endpoint, THEN THE Auth_System SHALL return a 401 response without revealing whether the requested resource exists
 5. IF an authenticated user requests a resource their role does not permit, THEN THE Auth_System SHALL return a 403 response without revealing the existence or content of the resource
 6. THE Auth_System SHALL enforce rate limiting on the login endpoint, allowing a maximum of 5 failed attempts per account within a 15-minute window, after which the account is locked for 15 minutes
-7. THE Auth_System SHALL expire user sessions after 60 minutes of inactivity, requiring re-authentication to continue
+7. THE Auth_System SHALL expire user sessions after a configurable period of inactivity (default 30 minutes, range 5–480 minutes via `session_timeout_minutes` system config), requiring re-authentication to continue
 
 ### Requirement 28: System Reliability
 
@@ -394,3 +397,70 @@ Webstatus-V2 is a website monitoring system for Kalimantan Institute of Technolo
 3. THE Monitoring_System SHALL persist all monitoring state to the database after each checking cycle completes, including the last check timestamp, countdown timer position, per-site check results, and the notification cycle counter, so that state is preserved across system restarts
 4. WHEN the Monitoring_System restarts after a failure, THE Monitoring_System SHALL resume the checking cycle from the last persisted state within one cycle interval (minimum 5 minutes) without re-sending notifications that were already sent in a prior cycle
 5. IF the Monitoring_System fails to complete 3 consecutive checking cycles, THEN THE Monitoring_System SHALL send a system health alert to all active Telegram notification targets indicating the monitoring system requires attention
+
+### Requirement 29: Category Management
+
+**User Story:** As an IT staff member, I want to manage categories for organizing monitored sites, so that sites can be grouped logically and filtered on the dashboard.
+
+#### Acceptance Criteria
+
+1. WHILE a user has the Admin or Super_Admin role, THE Website_Manager SHALL allow creating a new category with a name field (required, max 255 characters, unique across all categories)
+2. WHILE a user has the Admin or Super_Admin role, THE Website_Manager SHALL allow updating the name of an existing category, subject to the same uniqueness constraint
+3. WHILE a user has the Admin or Super_Admin role, THE Website_Manager SHALL allow deleting a category only if no monitored sites are currently assigned to that category
+4. IF a user attempts to delete a category that has associated sites, THEN THE Website_Manager SHALL reject the deletion and display an error message indicating the category has associated sites
+5. THE Website_Manager SHALL display a list of all categories showing their name and the number of sites in each category
+6. IF a user attempts to create a category with a name that already exists, THEN THE Website_Manager SHALL reject the creation and display a duplicate name error
+7. THE Website_Manager SHALL provide a JSON endpoint listing all categories for use in AJAX dropdowns
+
+### Requirement 30: Automatic Retry of Down Sites
+
+**User Story:** As an IT staff member, I want the system to automatically retry sites that appear down during a cycle, so that transient network glitches do not produce false status readings.
+
+#### Acceptance Criteria
+
+1. WHEN the initial HTTP checks complete and one or more sites have at least one failing page, THE Monitoring_System SHALL immediately re-check all failing sites once before finalizing results
+2. THE Monitoring_System SHALL replace the original check results with the retry results for each retried site
+3. THE Monitoring_System SHALL append a "--- RETRY CYCLE ---" separator entry to the live log before retry checks begin
+4. THE Monitoring_System SHALL NOT retry sites where all pages were successful in the initial check
+5. IF the retry check also fails for a site, THE Monitoring_System SHALL use the retry results (not the original) for status determination
+
+### Requirement 31: Dashboard Chart Time Filters
+
+**User Story:** As an IT staff member, I want to view response time and downtime charts with different time ranges, so that I can analyze both short-term and long-term performance trends.
+
+#### Acceptance Criteria
+
+1. THE Dashboard SHALL provide the following time filter options for both overview and per-site charts: 1 Day (1D), 3 Days (3D), 7 Days (7D), 1 Month (1M), 3 Months (3M), 6 Months (6M), and 1 Year (1Y)
+2. WHEN the 1D filter is selected, THE Dashboard SHALL display hourly data points (24 data points total)
+3. WHEN the 3D filter is selected, THE Dashboard SHALL display 6-hour interval data points (12 data points total)
+4. WHEN the 7D filter is selected, THE Dashboard SHALL display daily data points (7 data points total)
+5. WHEN the 1M filter is selected, THE Dashboard SHALL display daily data points (30 data points total)
+6. WHEN the 3M filter is selected, THE Dashboard SHALL display weekly data points (13 data points total)
+7. WHEN the 6M filter is selected, THE Dashboard SHALL display weekly data points (26 data points total)
+8. WHEN the 1Y filter is selected, THE Dashboard SHALL display monthly data points (12 data points total)
+9. THE Dashboard overview charts SHALL support per-site filtering via a searchable dropdown, where selecting a site shows only that site's data
+10. THE Dashboard SHALL cache overview chart data for 60 seconds to reduce query load during 2-second polling
+
+### Requirement 32: Dashboard Site Search and Status Filter
+
+**User Story:** As an IT staff member, I want to search and filter the site list by name and status, so that I can quickly find specific sites in a large monitored set.
+
+#### Acceptance Criteria
+
+1. THE Dashboard SHALL provide a text search field that filters the site list by site name (case-insensitive partial match)
+2. THE Dashboard SHALL provide a status filter dropdown with options: All, Up, Partially Down, Totally Down
+3. WHEN a search or filter is applied, THE Dashboard SHALL reset pagination to the first page
+4. THE Dashboard SHALL paginate the site list with 24 sites per page
+5. THE Dashboard SHALL display pagination controls when the total number of filtered sites exceeds 24
+
+### Requirement 33: Downtime History Log
+
+**User Story:** As an IT staff member, I want to see a historical log of outage events for a specific site, so that I can identify recurring issues and their duration.
+
+#### Acceptance Criteria
+
+1. WHEN viewing a site's detail view, THE Dashboard SHALL display a downtime history showing all outage events within the last 30 days
+2. THE Dashboard SHALL group consecutive down check results into outage windows showing: start time, end time (or "Ongoing"), affected pages, and total duration
+3. IF a site has no outage events in the last 30 days, THEN THE Dashboard SHALL display the downtime history section as empty
+4. THE Dashboard SHALL display outage events in reverse chronological order (most recent first)
+5. IF an outage is still ongoing at the time of display, THE Dashboard SHALL indicate "Ongoing" in the end time and append "(ongoing)" to the duration
