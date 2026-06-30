@@ -8,6 +8,7 @@ class TelegramTarget extends Model
 {
     protected $fillable = [
         'chat_id',
+        'username',
         'is_active',
     ];
 

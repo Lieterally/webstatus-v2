@@ -30,6 +30,23 @@
                     @enderror
                 </div>
 
+                <div class="form-control mb-4">
+                    <label class="label" for="username">
+                        <span class="label-text">Username</span>
+                    </label>
+                    <input type="text" name="username" id="username" value="{{ old('username') }}"
+                        class="input input-bordered w-full @error('username') input-error @enderror"
+                        placeholder="e.g. johndoe" maxlength="100">
+                    <label class="label">
+                        <span class="label-text-alt text-base-content/60">Telegram username (optional, without @)</span>
+                    </label>
+                    @error('username')
+                        <label class="label">
+                            <span class="label-text-alt text-error">{{ $message }}</span>
+                        </label>
+                    @enderror
+                </div>
+
                 <div class="form-control mb-4" x-data="{ isActive: {{ old('is_active', '1') == '1' ? 'true' : 'false' }} }">
                     <label class="label">
                         <span class="label-text">Status</span>

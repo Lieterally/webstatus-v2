@@ -35,17 +35,20 @@ class TelegramTargetController extends Controller
     {
         $validated = $request->validate([
             'chat_id' => ['required', 'string', 'max:32', 'regex:/^\d+$/', 'unique:telegram_targets,chat_id'],
+            'username' => ['nullable', 'string', 'max:100'],
             'is_active' => ['nullable', 'in:0,1'],
         ], [
             'chat_id.required' => 'The chat ID is required.',
             'chat_id.max' => 'The chat ID must not exceed 32 characters.',
             'chat_id.regex' => 'The chat ID must be a numeric string.',
             'chat_id.unique' => 'This chat ID is already registered.',
+            'username.max' => 'The username must not exceed 100 characters.',
             'is_active.in' => 'The is_active field must be 0 or 1.',
         ]);
 
         TelegramTarget::create([
             'chat_id' => $validated['chat_id'],
+            'username' => $validated['username'] ?? null,
             'is_active' => $validated['is_active'] ?? 1,
         ]);
 
@@ -74,17 +77,20 @@ class TelegramTargetController extends Controller
                 'regex:/^\d+$/',
                 Rule::unique('telegram_targets', 'chat_id')->ignore($telegramTarget->id),
             ],
+            'username' => ['nullable', 'string', 'max:100'],
             'is_active' => ['nullable', 'in:0,1'],
         ], [
             'chat_id.required' => 'The chat ID is required.',
             'chat_id.max' => 'The chat ID must not exceed 32 characters.',
             'chat_id.regex' => 'The chat ID must be a numeric string.',
             'chat_id.unique' => 'This chat ID is already registered.',
+            'username.max' => 'The username must not exceed 100 characters.',
             'is_active.in' => 'The is_active field must be 0 or 1.',
         ]);
 
         $telegramTarget->update([
             'chat_id' => $validated['chat_id'],
+            'username' => $validated['username'] ?? null,
             'is_active' => $validated['is_active'] ?? 1,
         ]);
 

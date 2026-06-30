@@ -30,6 +30,7 @@ class TelegramBotService implements TelegramBotServiceInterface
 
         $text = trim($message['text'] ?? '');
         $chatId = (string) ($message['chat']['id'] ?? '');
+        $username = $message['from']['username'] ?? null;
 
         if ($chatId === '' || $text === '') {
             return;
@@ -42,7 +43,7 @@ class TelegramBotService implements TelegramBotServiceInterface
             '/start' => $this->handleStart($chatId),
             '/help' => $this->handleHelp($chatId),
             '/chat_id' => $this->handleChatId($chatId),
-            '/recepient' => $this->handleRecepient($chatId),
+            '/recepient' => $this->handleRecepient($chatId, $username),
             '/subscribe' => $this->handleSubscribe($chatId),
             '/unsubscribe' => $this->handleUnsubscribe($chatId),
             '/down' => $this->handleDown($chatId),
@@ -161,11 +162,16 @@ class TelegramBotService implements TelegramBotServiceInterface
      * Self-register as notification recipient. Sets is_active=1.
      * If already registered, responds accordingly.
      */
-    private function handleRecepient(string $chatId): void
+    private function handleRecepient(string $chatId, ?string $username): void
     {
         $existing = TelegramTarget::where('chat_id', $chatId)->first();
 
         if ($existing) {
+            // Update username if it has changed
+            if ($username && $existing->username !== $username) {
+                $existing->update(['username' => $username]);
+            }
+
             $this->sendMessage($chatId, "You are already registered as a notification recipient.");
             return;
         }
@@ -173,6 +179,7 @@ class TelegramBotService implements TelegramBotServiceInterface
         try {
             TelegramTarget::create([
                 'chat_id' => $chatId,
+                'username' => $username,
                 'is_active' => true,
             ]);
 

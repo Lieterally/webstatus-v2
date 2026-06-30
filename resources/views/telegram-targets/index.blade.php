@@ -20,6 +20,7 @@
                     <thead>
                         <tr>
                             <th>Chat ID</th>
+                            <th>Username</th>
                             <th>Status</th>
                             <th class="text-right">Actions</th>
                         </tr>
@@ -28,6 +29,13 @@
                         @forelse($targets as $target)
                             <tr>
                                 <td class="font-mono">{{ $target->chat_id }}</td>
+                                <td>
+                                    @if ($target->username)
+                                        <span class="text-base-content">@ {{ $target->username }}</span>
+                                    @else
+                                        <span class="text-base-content/40">—</span>
+                                    @endif
+                                </td>
                                 <td>
                                     @if ($target->is_active)
                                         <span class="badge badge-success badge-sm">Active</span>
@@ -105,7 +113,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="3" class="text-center text-base-content/60">No Telegram targets found.</td>
+                                <td colspan="4" class="text-center text-base-content/60">No Telegram targets found.</td>
                             </tr>
                         @endforelse
                     </tbody>
