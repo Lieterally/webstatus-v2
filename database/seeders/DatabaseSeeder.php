@@ -21,7 +21,8 @@ class DatabaseSeeder extends Seeder
             ITStaffSeeder::class,
             SiteSeeder::class,
             PageSeeder::class,
-            UserSeeder::class
+            UserSeeder::class,
+            TelegramTargetSeeder::class
 
         ]);
     }
