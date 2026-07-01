@@ -225,11 +225,22 @@
                 {{-- Downtime Chart --}}
                 <div>
                     <div class="flex items-center justify-between mb-3">
-                        <h3 class="text-sm font-semibold text-base-content/70">Downtime</h3>
+                        <a href="{{ route('downtime.index') }}"
+                            class="text-sm font-semibold text-base-content/70 hover:text-primary transition-colors duration-150 group">
+                            Downtime
+                            <i
+                                class="fa-solid fa-arrow-right text-xs px-2 group-hover:translate-x-0.5 transition-transform duration-150"></i>
+                        </a>
                         <div class="flex items-center gap-2">
                             <span class="badge badge-error badge-sm" id="downtimeTotalBadge">
                                 Total: {{ $overviewChartData['downtime']['totalHours'] }}
                             </span>
+                            {{-- <a href="{{ route('downtime.index') }}"
+                                class="badge badge-error badge-sm gap-1 hover:badge-error cursor-pointer"
+                                id="downtimeTotalBadge">
+                                Total: {{ $overviewChartData['downtime']['totalHours'] }}
+                                <i class="fa-solid fa-arrow-right text-xs"></i>
+                            </a> --}}
                             <div class="join">
                                 @foreach (['1D', '3D', '7D', '1M', '3M', '6M', '1Y'] as $filter)
                                     <button wire:click="$set('downtimeFilter', '{{ $filter }}')"
