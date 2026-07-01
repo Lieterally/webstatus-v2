@@ -29,6 +29,200 @@ class StatsAggregationService
     }
 
     /**
+     * Backfill all rollup tables from existing raw check_results data.
+     * Processes every hour, day, week, and month that has raw data.
+     *
+     * @param callable|null $progress Optional callback for progress reporting: fn(string $message)
+     */
+    public function backfillAll(?callable $progress = null): void
+    {
+        $sites = Site::all();
+
+        $log = fn(string $msg) => $progress ? ($progress)($msg) : null;
+
+        // Determine the earliest check result date
+        $earliest = CheckResult::min('checked_at');
+        if (!$earliest) {
+            $log('No check results found. Nothing to backfill.');
+            return;
+        }
+
+        $earliest = Carbon::parse($earliest);
+        $now = Carbon::now();
+
+        $log("Backfilling from {$earliest->toDateTimeString()} to now...");
+
+        // --- Hourly backfill ---
+        $log('Backfilling hourly stats...');
+        $hourlyStart = $earliest->copy()->startOfHour();
+        $hoursTotal = (int) $hourlyStart->diffInHours($now->copy()->startOfHour()) + 1;
+        $hoursProcessed = 0;
+
+        while ($hourlyStart->lte($now)) {
+            $periodStart = $hourlyStart->copy();
+            $periodEnd = $periodStart->copy()->addHour();
+
+            foreach ($sites as $site) {
+                $results = CheckResult::where('site_id', $site->id)
+                    ->where('checked_at', '>=', $periodStart)
+                    ->where('checked_at', '<', $periodEnd)
+                    ->get();
+
+                if ($results->isEmpty()) {
+                    continue;
+                }
+
+                $successfulResults = $results->where('http_code', '>', 0);
+                $avgResponseTime = $successfulResults->isNotEmpty()
+                    ? $successfulResults->avg('response_time_ms')
+                    : 0;
+
+                $downtimeSeconds = $this->calculateDowntimeForPeriod($site->id, $periodStart, $periodEnd);
+
+                HourlyStat::updateOrCreate(
+                    ['site_id' => $site->id, 'period_start' => $periodStart],
+                    [
+                        'avg_response_time_ms' => round($avgResponseTime, 2),
+                        'downtime_seconds' => $downtimeSeconds,
+                        'checks_count' => $results->count(),
+                    ]
+                );
+            }
+
+            $hoursProcessed++;
+            if ($hoursProcessed % 24 === 0) {
+                $log("  Hourly: {$hoursProcessed}/{$hoursTotal} hours processed...");
+            }
+
+            $hourlyStart->addHour();
+        }
+
+        $log("  Hourly backfill complete ({$hoursProcessed} hours).");
+
+        // --- Daily backfill (aggregated from hourly) ---
+        $log('Backfilling daily stats...');
+        $dailyStart = $earliest->copy()->startOfDay();
+        $daysTotal = (int) $dailyStart->diffInDays($now->copy()->startOfDay()) + 1;
+        $daysProcessed = 0;
+
+        while ($dailyStart->lte($now)) {
+            $dayStart = $dailyStart->copy();
+            $dayEnd = $dayStart->copy()->endOfDay();
+
+            foreach ($sites as $site) {
+                $hourlyRecords = HourlyStat::where('site_id', $site->id)
+                    ->where('period_start', '>=', $dayStart)
+                    ->where('period_start', '<=', $dayEnd)
+                    ->get();
+
+                if ($hourlyRecords->isEmpty()) {
+                    continue;
+                }
+
+                $totalChecks = $hourlyRecords->sum('checks_count');
+                $weightedResponseTime = $hourlyRecords->sum(fn($r) => $r->avg_response_time_ms * $r->checks_count);
+                $avgResponseTime = $totalChecks > 0 ? $weightedResponseTime / $totalChecks : 0;
+                $totalDowntime = $hourlyRecords->sum('downtime_seconds');
+
+                DailyStat::updateOrCreate(
+                    ['site_id' => $site->id, 'period_start' => $dayStart->toDateString()],
+                    [
+                        'avg_response_time_ms' => round($avgResponseTime, 2),
+                        'downtime_seconds' => $totalDowntime,
+                        'checks_count' => $totalChecks,
+                    ]
+                );
+            }
+
+            $daysProcessed++;
+            $dailyStart->addDay();
+        }
+
+        $log("  Daily backfill complete ({$daysProcessed} days).");
+
+        // --- Weekly backfill (aggregated from daily) ---
+        $log('Backfilling weekly stats...');
+        $weeklyStart = $earliest->copy()->startOfWeek();
+        $weeksProcessed = 0;
+
+        while ($weeklyStart->lte($now)) {
+            $weekStart = $weeklyStart->copy();
+            $weekEnd = $weekStart->copy()->endOfWeek();
+
+            foreach ($sites as $site) {
+                $dailyRecords = DailyStat::where('site_id', $site->id)
+                    ->where('period_start', '>=', $weekStart->toDateString())
+                    ->where('period_start', '<=', $weekEnd->toDateString())
+                    ->get();
+
+                if ($dailyRecords->isEmpty()) {
+                    continue;
+                }
+
+                $totalChecks = $dailyRecords->sum('checks_count');
+                $weightedResponseTime = $dailyRecords->sum(fn($r) => $r->avg_response_time_ms * $r->checks_count);
+                $avgResponseTime = $totalChecks > 0 ? $weightedResponseTime / $totalChecks : 0;
+                $totalDowntime = $dailyRecords->sum('downtime_seconds');
+
+                WeeklyStat::updateOrCreate(
+                    ['site_id' => $site->id, 'period_start' => $weekStart->toDateString()],
+                    [
+                        'avg_response_time_ms' => round($avgResponseTime, 2),
+                        'downtime_seconds' => $totalDowntime,
+                        'checks_count' => $totalChecks,
+                    ]
+                );
+            }
+
+            $weeksProcessed++;
+            $weeklyStart->addWeek();
+        }
+
+        $log("  Weekly backfill complete ({$weeksProcessed} weeks).");
+
+        // --- Monthly backfill (aggregated from daily) ---
+        $log('Backfilling monthly stats...');
+        $monthlyStart = $earliest->copy()->startOfMonth();
+        $monthsProcessed = 0;
+
+        while ($monthlyStart->lte($now)) {
+            $monthStart = $monthlyStart->copy();
+            $monthEnd = $monthStart->copy()->endOfMonth();
+
+            foreach ($sites as $site) {
+                $dailyRecords = DailyStat::where('site_id', $site->id)
+                    ->where('period_start', '>=', $monthStart->toDateString())
+                    ->where('period_start', '<=', $monthEnd->toDateString())
+                    ->get();
+
+                if ($dailyRecords->isEmpty()) {
+                    continue;
+                }
+
+                $totalChecks = $dailyRecords->sum('checks_count');
+                $weightedResponseTime = $dailyRecords->sum(fn($r) => $r->avg_response_time_ms * $r->checks_count);
+                $avgResponseTime = $totalChecks > 0 ? $weightedResponseTime / $totalChecks : 0;
+                $totalDowntime = $dailyRecords->sum('downtime_seconds');
+
+                MonthlyStat::updateOrCreate(
+                    ['site_id' => $site->id, 'period_start' => $monthStart->toDateString()],
+                    [
+                        'avg_response_time_ms' => round($avgResponseTime, 2),
+                        'downtime_seconds' => $totalDowntime,
+                        'checks_count' => $totalChecks,
+                    ]
+                );
+            }
+
+            $monthsProcessed++;
+            $monthlyStart->addMonth();
+        }
+
+        $log("  Monthly backfill complete ({$monthsProcessed} months).");
+        $log('Backfill finished.');
+    }
+
+    /**
      * Update hourly stats for the current hour for a given site.
      */
     private function updateHourlyForSite(int $siteId): void
