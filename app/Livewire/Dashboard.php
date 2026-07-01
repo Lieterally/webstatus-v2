@@ -396,89 +396,24 @@ class Dashboard extends Component
     }
 
     /**
-     * Get downtime history for a site (last 30 days of outage events).
-     * Groups consecutive down checks into outage windows.
+     * Get downtime history for a site from the downtime_histories table.
      */
     private function getDowntimeHistory(Site $site): array
     {
-        $since = Carbon::now()->subDays(30);
-
-        // Get all check results for this site in the last 30 days, ordered by time
-        $results = CheckResult::where('site_id', $site->id)
-            ->where('checked_at', '>=', $since)
-            ->orderBy('checked_at')
-            ->select('cycle_id', 'page_id', 'http_code', 'checked_at', 'error_type')
+        $records = \App\Models\DowntimeHistory::where('site_id', $site->id)
+            ->orderBy('started_at', 'desc')
+            ->limit(50)
             ->get();
 
-        if ($results->isEmpty()) {
-            return [];
-        }
-
-        // Get page paths for display
-        $pages = $site->pages->pluck('path', 'id')->toArray();
-
-        // Group by cycle and determine down pages per cycle
-        $cycles = $results->groupBy('cycle_id');
-        $cycleEntries = [];
-
-        foreach ($cycles as $cycleId => $cycleResults) {
-            $downPages = [];
-            foreach ($cycleResults as $result) {
-                $code = $result->http_code;
-                if ($code === 0 || $code < 200 || $code >= 400) {
-                    $downPages[] = $pages[$result->page_id] ?? '/unknown';
-                }
-            }
-
-            $cycleEntries[] = [
-                'time' => Carbon::parse($cycleResults->first()->checked_at),
-                'down' => !empty($downPages),
-                'downPages' => $downPages,
+        return $records->map(function ($record) {
+            return [
+                'from' => $record->started_at->format('Y-m-d H:i:s'),
+                'to' => $record->ended_at?->format('Y-m-d H:i:s') ?? 'Ongoing',
+                'pages' => implode(', ', $record->affected_pages),
+                'duration' => $this->formatDurationSeconds($record->getLiveDurationSeconds())
+                    . ($record->isActive() ? ' (ongoing)' : ''),
             ];
-        }
-
-        // Sort by time
-        usort($cycleEntries, fn($a, $b) => $a['time']->timestamp - $b['time']->timestamp);
-
-        // Build outage windows
-        $history = [];
-        $outageStart = null;
-        $outagePages = [];
-
-        foreach ($cycleEntries as $entry) {
-            if ($entry['down'] && $outageStart === null) {
-                $outageStart = $entry['time'];
-                $outagePages = $entry['downPages'];
-            } elseif ($entry['down'] && $outageStart !== null) {
-                // Merge pages
-                $outagePages = array_unique(array_merge($outagePages, $entry['downPages']));
-            } elseif (!$entry['down'] && $outageStart !== null) {
-                // Outage ended
-                $duration = $outageStart->diffInSeconds($entry['time']);
-                $history[] = [
-                    'from' => $outageStart->format('Y-m-d H:i:s'),
-                    'to' => $entry['time']->format('Y-m-d H:i:s'),
-                    'pages' => implode(', ', $outagePages),
-                    'duration' => $this->formatDurationSeconds($duration),
-                ];
-                $outageStart = null;
-                $outagePages = [];
-            }
-        }
-
-        // If still in outage
-        if ($outageStart !== null) {
-            $duration = $outageStart->diffInSeconds(Carbon::now());
-            $history[] = [
-                'from' => $outageStart->format('Y-m-d H:i:s'),
-                'to' => 'Ongoing',
-                'pages' => implode(', ', $outagePages),
-                'duration' => $this->formatDurationSeconds($duration) . ' (ongoing)',
-            ];
-        }
-
-        // Return most recent first
-        return array_reverse($history);
+        })->toArray();
     }
 
     /**

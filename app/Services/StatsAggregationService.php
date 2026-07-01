@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\CheckResult;
 use App\Models\DailyStat;
+use App\Models\DowntimeHistory;
 use App\Models\HourlyStat;
 use App\Models\MonthlyStat;
 use App\Models\Site;
@@ -219,6 +220,86 @@ class StatsAggregationService
         }
 
         $log("  Monthly backfill complete ({$monthsProcessed} months).");
+
+        // --- Downtime history backfill ---
+        $log('Backfilling downtime histories...');
+        $sites = Site::all(); // refresh for this section
+
+        foreach ($sites as $site) {
+            // Delete any existing backfilled records for this site to avoid duplicates
+            DowntimeHistory::where('site_id', $site->id)->delete();
+
+            $results = CheckResult::where('site_id', $site->id)
+                ->orderBy('checked_at')
+                ->select('cycle_id', 'page_id', 'http_code', 'checked_at')
+                ->get();
+
+            if ($results->isEmpty()) {
+                continue;
+            }
+
+            $pages = $site->pages->pluck('path', 'id')->toArray();
+
+            // Group by cycle
+            $cycles = $results->groupBy('cycle_id');
+            $cycleEntries = [];
+
+            foreach ($cycles as $cycleResults) {
+                $downPages = [];
+                foreach ($cycleResults as $result) {
+                    $code = $result->http_code;
+                    if ($code === 0 || $code < 200 || $code >= 400) {
+                        $downPages[] = $pages[$result->page_id] ?? '/unknown';
+                    }
+                }
+
+                $cycleEntries[] = [
+                    'time' => Carbon::parse($cycleResults->first()->checked_at),
+                    'down' => !empty($downPages),
+                    'downPages' => array_unique($downPages),
+                ];
+            }
+
+            usort($cycleEntries, fn($a, $b) => $a['time']->timestamp - $b['time']->timestamp);
+
+            $outageStart = null;
+            $outagePages = [];
+
+            foreach ($cycleEntries as $entry) {
+                if ($entry['down'] && $outageStart === null) {
+                    $outageStart = $entry['time'];
+                    $outagePages = $entry['downPages'];
+                } elseif ($entry['down'] && $outageStart !== null) {
+                    $outagePages = array_values(array_unique(array_merge($outagePages, $entry['downPages'])));
+                } elseif (!$entry['down'] && $outageStart !== null) {
+                    $endedAt = $entry['time'];
+                    DowntimeHistory::create([
+                        'site_id' => $site->id,
+                        'started_at' => $outageStart,
+                        'ended_at' => $endedAt,
+                        'duration_seconds' => (int) $outageStart->diffInSeconds($endedAt),
+                        'affected_pages' => array_values($outagePages),
+                        'status' => 'resolved',
+                    ]);
+                    $outageStart = null;
+                    $outagePages = [];
+                }
+            }
+
+            // If still in outage at end of data
+            if ($outageStart !== null) {
+                DowntimeHistory::create([
+                    'site_id' => $site->id,
+                    'started_at' => $outageStart,
+                    'ended_at' => null,
+                    'duration_seconds' => null,
+                    'affected_pages' => array_values($outagePages),
+                    'status' => 'active',
+                ]);
+            }
+        }
+
+        $log('  Downtime history backfill complete.');
         $log('Backfill finished.');
     }
 
