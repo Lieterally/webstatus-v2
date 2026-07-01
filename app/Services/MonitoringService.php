@@ -120,6 +120,9 @@ class MonitoringService implements MonitoringServiceInterface
             // 6. Update last cycle timestamp
             $this->updateLastCycleTimestamp($completedAt);
 
+            // 7. Update all rollup stats (hourly, daily, weekly, monthly)
+            app(StatsAggregationService::class)->updateAllCurrentStats();
+
             return new CycleResult(
                 cycleId: $cycle->id,
                 sitesChecked: $sites->count(),

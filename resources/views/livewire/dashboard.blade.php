@@ -149,70 +149,8 @@
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                 <div>
                     <h2 class="card-title">Overview</h2>
-                    @if ($overviewSiteInfo)
-                        <p class="text-sm text-base-content/60 mt-0.5">
-                            <span class="font-medium">{{ $overviewSiteInfo->name }}</span>
-                            <span class="text-base-content/40 ml-1">{{ $overviewSiteInfo->base_url }}</span>
-                        </p>
-                    @endif
                 </div>
                 <div class="flex items-center gap-2">
-                    {{-- <label for="overviewSiteFilter" class="text-sm text-base-content/60">Filter site:</label>
-                    <select id="overviewSiteFilter" wire:model.live="overviewSiteFilter"
-                        class="select select-bordered select-sm">
-                        <option value="">All Sites</option>
-                        @foreach ($allSites as $s)
-                            <option value="{{ $s->id }}">{{ $s->name }}</option>
-                        @endforeach
-                    </select> --}}
-
-                    {{-- Site Filter --}}
-                    {{-- 
-                    <div class="dropdown">
-                        <div tabindex="0" role="button" class="btn btn-sm">
-                            {{ $overviewSiteFilter ? $allSites->firstWhere('id', $overviewSiteFilter)?->name ?? 'All Sites' : 'All Sites' }}
-                        </div>
-
-                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-10 w-52 p-2 shadow">
-                            <li><a wire:click="$set('overviewSiteFilter', '')">All Sites</a></li>
-
-                            @foreach ($allSites as $s)
-                                <li>
-                                    <a wire:click="$set('overviewSiteFilter', {{ $s->id }})">
-                                        {{ $s->name }}
-                                    </a>
-                                </li>
-                            @endforeach
-                        </ul>
-                    </div> --}}
-
-                    <div x-data="{
-                        tomSelect: null,
-                        init() {
-                            this.tomSelect = new TomSelect(this.$refs.overviewSiteSelect, {
-                                placeholder: 'All Sites',
-                                allowEmptyOption: true,
-                                onChange: (value) => {
-                                    @this.set('overviewSiteFilter', value || null);
-                                }
-                            });
-                        },
-                        destroy() {
-                            if (this.tomSelect) {
-                                this.tomSelect.destroy();
-                            }
-                        }
-                    }" wire:ignore>
-                        <select x-ref="overviewSiteSelect" id="overviewSiteFilter">
-                            <option value="">All Sites</option>
-                            @foreach ($allSites as $s)
-                                <option value="{{ $s->id }}"
-                                    {{ $overviewSiteFilter == $s->id ? 'selected' : '' }}>
-                                    {{ $s->name }}
-                                </option>
-                            @endforeach
-                        </select>
-                    </div>
                 </div>
             </div>
 
