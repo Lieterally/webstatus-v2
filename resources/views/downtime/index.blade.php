@@ -66,7 +66,14 @@
                 @if (empty($ganttLabels))
                     <p class="text-sm text-base-content/50">No downtime events in the last 24 hours.</p>
                 @else
-                    <div id="ganttChart"></div>
+                    <div id="ganttChart" style="max-height: 400px; overflow-y: auto;"></div>
+                    <style>
+                        #ganttChart .apexcharts-xaxis {
+                            position: sticky;
+                            top: 0;
+                            z-index: 10;
+                        }
+                    </style>
                 @endif
             </div>
         </div>
@@ -244,7 +251,7 @@
                                 show: false
                             },
                             zoom: {
-                                enabled: false
+                                enabled: true
                             },
                         },
                         plotOptions: {
