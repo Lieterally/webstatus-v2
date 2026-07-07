@@ -808,19 +808,11 @@ class Dashboard extends Component
 
     /**
      * Get the yMax value for downtime chart based on filter.
+     * Returns null to let Chart.js auto-scale from the highest data point.
      */
     private function getDowntimeYMax(string $filter): ?int
     {
-        return match ($filter) {
-            '1D' => 1,
-            '3D' => 6,
-            '7D' => 24,
-            '1M' => 168,
-            '3M' => 168,
-            '6M' => null,
-            '1Y' => null,
-            default => 1,
-        };
+        return null;
     }
 
     public function render(): View
