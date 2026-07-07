@@ -1,5 +1,6 @@
 import Chart from 'chart.js/auto';
 import TomSelect from 'tom-select';
+import ApexCharts from 'apexcharts';
 
 // Import Tom Select CSS
 import 'tom-select/dist/css/tom-select.css';
@@ -9,3 +10,6 @@ window.Chart = Chart;
 
 // Make TomSelect available globally for Alpine.js components
 window.TomSelect = TomSelect;
+
+// Make ApexCharts available globally
+window.ApexCharts = ApexCharts;

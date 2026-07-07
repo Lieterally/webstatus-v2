@@ -66,11 +66,7 @@
                 @if (empty($ganttLabels))
                     <p class="text-sm text-base-content/50">No downtime events in the last 24 hours.</p>
                 @else
-                    <div style="max-height: 400px; overflow-y: auto;">
-                        <div style="height: {{ max(200, count($ganttData) * 28 + 40) }}px; position: relative;">
-                            <canvas id="ganttChart"></canvas>
-                        </div>
-                    </div>
+                    <div id="ganttChart"></div>
                 @endif
             </div>
         </div>
@@ -235,125 +231,76 @@
             <script>
                 document.addEventListener('DOMContentLoaded', function() {
                     const ganttData = @js($ganttData);
-                    const ctx = document.getElementById('ganttChart');
+                    const chartHeight = Math.max(250, ganttData.length * 40 + 80);
 
-                    // Build one row per event, show site label only on first row per site
-                    const rowLabels = [];
-                    const barData = [];
-                    const barColors = [];
-                    const seen = {};
-
-                    ganttData.forEach(event => {
-                        if (!(event.site in seen)) {
-                            seen[event.site] = true;
-                            rowLabels.push(event.site);
-                        } else {
-                            rowLabels.push('');
-                        }
-                        barData.push([event.start, event.end]);
-                        barColors.push(event.active ? '#DC2626' : '#F87171');
-                    });
-
-                    // Alternating row backgrounds plugin
-                    const alternatingRowsPlugin = {
-                        id: 'alternatingRows',
-                        beforeDraw(chart) {
-                            const {
-                                ctx: c,
-                                chartArea,
-                                scales
-                            } = chart;
-                            if (!scales.y || !chartArea) return;
-                            const yScale = scales.y;
-                            const rowHeight = yScale.height / rowLabels.length;
-                            let siteIdx = 0;
-
-                            c.save();
-                            rowLabels.forEach((label, i) => {
-                                if (label !== '') {
-                                    if (siteIdx % 2 === 0) {
-                                        const y = yScale.getPixelForValue(i) - rowHeight / 2;
-                                        c.fillStyle = 'rgba(0, 0, 0, 0.03)';
-                                        c.fillRect(chartArea.left, y, chartArea.width, rowHeight);
-                                    }
-                                    siteIdx++;
-                                }
-                            });
-                            c.restore();
-                        }
-                    };
-
-                    new Chart(ctx, {
-                        type: 'bar',
-                        data: {
-                            labels: rowLabels,
-                            datasets: [{
-                                data: barData,
-                                backgroundColor: barColors,
-                                borderWidth: 0,
-                                borderRadius: 999,
-                                borderSkipped: false,
-                                barThickness: 12,
-                            }],
-                        },
-                        plugins: [alternatingRowsPlugin],
-                        options: {
-                            indexAxis: 'y',
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                                legend: {
-                                    display: false
-                                },
-                                tooltip: {
-                                    callbacks: {
-                                        title: function(items) {
-                                            const idx = items[0].dataIndex;
-                                            for (let i = idx; i >= 0; i--) {
-                                                if (rowLabels[i] !== '') return rowLabels[i];
-                                            }
-                                            return '';
-                                        },
-                                        label: function(context) {
-                                            const raw = context.raw;
-                                            const pad = n => String(n).padStart(2, '0');
-                                            const startH = Math.floor(raw[0]);
-                                            const startM = Math.round((raw[0] - startH) * 60);
-                                            const endH = Math.floor(raw[1]);
-                                            const endM = Math.round((raw[1] - endH) * 60);
-                                            const dur = raw[1] - raw[0];
-                                            const durH = Math.floor(dur);
-                                            const durM = Math.round((dur - durH) * 60);
-                                            return `${pad(startH)}:${pad(startM)} – ${pad(endH)}:${pad(endM)} (${durH > 0 ? durH + 'h ' : ''}${durM}m)`;
-                                        }
-                                    }
-                                }
+                    const options = {
+                        series: [{
+                            data: ganttData
+                        }],
+                        chart: {
+                            type: 'rangeBar',
+                            height: chartHeight,
+                            toolbar: {
+                                show: false
                             },
-                            scales: {
-                                x: {
-                                    position: 'top',
-                                    min: 0,
-                                    max: 24,
-                                    ticks: {
-                                        stepSize: 2,
-                                        callback: function(value) {
-                                            const startTs = @js($ganttStart->timestamp * 1000);
-                                            const h = new Date(startTs + value * 3600000);
-                                            return h.getHours().toString().padStart(2, '0') + ':00';
-                                        }
-                                    },
-                                    grid: {
-                                        color: 'rgba(0,0,0,0.05)'
-                                    }
-                                },
-                                y: {
-                                    grid: {
-                                        display: false
-                                    }
+                            zoom: {
+                                enabled: false
+                            },
+                        },
+                        plotOptions: {
+                            bar: {
+                                horizontal: true,
+                                barHeight: '50%',
+                                borderRadius: 6,
+                                rangeBarGroupRows: true,
+                            }
+                        },
+                        xaxis: {
+                            type: 'datetime',
+                            position: 'top',
+                            min: @js($ganttStart->getTimestampMs()),
+                            max: @js(now()->getTimestampMs()),
+                            labels: {
+                                datetimeUTC: false,
+                                format: 'HH:00',
+                            },
+                            tickAmount: 12,
+                        },
+                        yaxis: {
+                            labels: {
+                                style: {
+                                    fontSize: '12px'
                                 }
                             }
-                        }
-                    });
+                        },
+                        grid: {
+                            row: {
+                                colors: ['#f8f8f8', 'transparent'],
+                                opacity: 0.5,
+                            },
+                            xaxis: {
+                                lines: {
+                                    show: true
+                                }
+                            },
+                            yaxis: {
+                                lines: {
+                                    show: false
+                                }
+                            },
+                        },
+                        tooltip: {
+                            x: {
+                                format: 'dd MMM HH:mm'
+                            },
+                        },
+                        legend: {
+                            show: false
+                        },
+                    };
+
+                    const chart = new ApexCharts(document.getElementById('ganttChart'), options);
+                    chart.render();
                 });
             </script>
         @endpush

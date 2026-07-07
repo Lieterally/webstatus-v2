@@ -110,31 +110,17 @@ class DowntimeController extends Controller
             $barStart = $event->started_at->lt($ganttStart) ? $ganttStart : $event->started_at;
             $barEnd = $event->ended_at ?? Carbon::now();
 
-            // Convert to decimal hours relative to ganttStart
-            $startHour = $ganttStart->diffInMinutes($barStart) / 60;
-            $endHour = $ganttStart->diffInMinutes($barEnd) / 60;
-
-            // Clamp to 24h
-            $startHour = max(0, min(24, $startHour));
-            $endHour = max(0, min(24, $endHour));
-
             $ganttData[] = [
-                'site' => $siteName,
-                'start' => round($startHour, 2),
-                'end' => round($endHour, 2),
-                'active' => $event->isActive(),
+                'x' => $siteName,
+                'y' => [
+                    $barStart->getTimestampMs(),
+                    $barEnd->getTimestampMs(),
+                ],
+                'fillColor' => $event->isActive() ? '#DC2626' : '#F87171',
             ];
         }
 
-        // Build labels (unique site names) and datasets
-        $ganttLabels = collect($ganttData)->pluck('site')->unique()->values()->toArray();
-
-        // X-axis hour labels (for reference)
-        $ganttHourStart = $ganttStart->copy();
-        $ganttXLabels = [];
-        for ($i = 0; $i <= 24; $i += 2) {
-            $ganttXLabels[] = $ganttHourStart->copy()->addHours($i)->format('H:00');
-        }
+        $ganttLabels = collect($ganttEvents)->map(fn($e) => $e->site?->name ?? 'Unknown')->unique()->values()->toArray();
 
         return view('downtime.index', compact(
             'events',
