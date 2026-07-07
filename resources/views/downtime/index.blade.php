@@ -67,7 +67,7 @@
                     <p class="text-sm text-base-content/50">No downtime events in the last 24 hours.</p>
                 @else
                     <div style="max-height: 400px; overflow-y: auto;">
-                        <div style="height: {{ max(200, count($ganttData) * 28) }}px; position: relative;">
+                        <div style="height: {{ max(200, count($ganttData) * 28 + 40) }}px; position: relative;">
                             <canvas id="ganttChart"></canvas>
                         </div>
                     </div>
@@ -308,7 +308,6 @@
                                 tooltip: {
                                     callbacks: {
                                         title: function(items) {
-                                            // Show site name in tooltip even for empty-label rows
                                             const idx = items[0].dataIndex;
                                             for (let i = idx; i >= 0; i--) {
                                                 if (rowLabels[i] !== '') return rowLabels[i];
@@ -332,12 +331,9 @@
                             },
                             scales: {
                                 x: {
+                                    position: 'top',
                                     min: 0,
                                     max: 24,
-                                    title: {
-                                        display: true,
-                                        text: 'Hours'
-                                    },
                                     ticks: {
                                         stepSize: 2,
                                         callback: function(value) {
