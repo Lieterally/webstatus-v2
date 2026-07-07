@@ -88,6 +88,54 @@ class DowntimeController extends Controller
 
         $sites = Site::orderBy('name')->get(['id', 'name']);
 
+        // --- Gantt chart data (last 24 hours) ---
+        $ganttStart = Carbon::now()->subDay();
+        $ganttEvents = DowntimeHistory::with('site')
+            ->where(function ($q) use ($ganttStart) {
+                $q->where('started_at', '>=', $ganttStart)
+                    ->orWhere(function ($q2) use ($ganttStart) {
+                        $q2->where('started_at', '<', $ganttStart)
+                            ->where(function ($q3) use ($ganttStart) {
+                                $q3->whereNull('ended_at')
+                                    ->orWhere('ended_at', '>=', $ganttStart);
+                            });
+                    });
+            })
+            ->orderBy('started_at')
+            ->get();
+
+        $ganttData = [];
+        foreach ($ganttEvents as $event) {
+            $siteName = $event->site?->name ?? 'Unknown';
+            $barStart = $event->started_at->lt($ganttStart) ? $ganttStart : $event->started_at;
+            $barEnd = $event->ended_at ?? Carbon::now();
+
+            // Convert to decimal hours relative to ganttStart
+            $startHour = $ganttStart->diffInMinutes($barStart) / 60;
+            $endHour = $ganttStart->diffInMinutes($barEnd) / 60;
+
+            // Clamp to 24h
+            $startHour = max(0, min(24, $startHour));
+            $endHour = max(0, min(24, $endHour));
+
+            $ganttData[] = [
+                'site' => $siteName,
+                'start' => round($startHour, 2),
+                'end' => round($endHour, 2),
+                'active' => $event->isActive(),
+            ];
+        }
+
+        // Build labels (unique site names) and datasets
+        $ganttLabels = collect($ganttData)->pluck('site')->unique()->values()->toArray();
+
+        // X-axis hour labels (for reference)
+        $ganttHourStart = $ganttStart->copy();
+        $ganttXLabels = [];
+        for ($i = 0; $i <= 24; $i += 2) {
+            $ganttXLabels[] = $ganttHourStart->copy()->addHours($i)->format('H:00');
+        }
+
         return view('downtime.index', compact(
             'events',
             'range',
@@ -99,6 +147,9 @@ class DowntimeController extends Controller
             'totalDowntimeSeconds',
             'mostAffectedSite',
             'siteBreakdown',
+            'ganttData',
+            'ganttLabels',
+            'ganttStart',
         ));
     }
 }

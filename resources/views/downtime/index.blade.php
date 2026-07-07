@@ -59,6 +59,20 @@
 
     <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
+        {{-- Gantt Chart (Last 24 Hours) --}}
+        <div class="xl:col-span-3 card bg-base-100 shadow-sm">
+            <div class="card-body">
+                <h2 class="card-title text-base mb-2">Downtime Timeline (Last 24 Hours)</h2>
+                @if (empty($ganttLabels))
+                    <p class="text-sm text-base-content/50">No downtime events in the last 24 hours.</p>
+                @else
+                    <div style="height: {{ max(120, count($ganttLabels) * 40 + 60) }}px;">
+                        <canvas id="ganttChart" style="width: 100%; height: 100%;"></canvas>
+                    </div>
+                @endif
+            </div>
+        </div>
+
         {{-- Outage Events Table --}}
         <div class="xl:col-span-2 card bg-base-100 shadow-sm">
             <div class="card-body p-0">
@@ -213,4 +227,119 @@
         </div>
 
     </div>
+
+    @if (!empty($ganttLabels))
+        @push('scripts')
+            <script>
+                document.addEventListener('DOMContentLoaded', function() {
+                    const ganttData = @js($ganttData);
+                    const labels = @js($ganttLabels);
+                    const ctx = document.getElementById('ganttChart');
+
+                    // Group events by site and build layered datasets for alignment
+                    const grouped = {};
+                    ganttData.forEach(event => {
+                        if (!grouped[event.site]) grouped[event.site] = [];
+                        grouped[event.site].push(event);
+                    });
+
+                    const maxEvents = Math.max(...Object.values(grouped).map(g => g.length), 1);
+                    const datasets = [];
+
+                    for (let layer = 0; layer < maxEvents; layer++) {
+                        const data = labels.map(site => {
+                            const events = grouped[site] || [];
+                            if (layer < events.length) {
+                                return [events[layer].start, events[layer].end];
+                            }
+                            return null;
+                        });
+
+                        const colors = labels.map(site => {
+                            const events = grouped[site] || [];
+                            if (layer < events.length) {
+                                return events[layer].active ? '#DC2626' : '#F87171';
+                            }
+                            return 'transparent';
+                        });
+
+                        datasets.push({
+                            data: data,
+                            backgroundColor: colors,
+                            borderColor: colors.map(c => c === '#DC2626' ? '#991B1B' : (c === '#F87171' ?
+                                '#DC2626' : 'transparent')),
+                            borderWidth: 0,
+                            borderRadius: 999,
+                            borderSkipped: false,
+                            barPercentage: 0.5,
+                            categoryPercentage: 0.8,
+                        });
+                    }
+
+                    new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: labels,
+                            datasets: datasets,
+                        },
+                        options: {
+                            indexAxis: 'y',
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    display: false
+                                },
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
+                                            const raw = context.raw.x;
+                                            const startH = Math.floor(raw[0]);
+                                            const startM = Math.round((raw[0] - startH) * 60);
+                                            const endH = Math.floor(raw[1]);
+                                            const endM = Math.round((raw[1] - endH) * 60);
+                                            const duration = raw[1] - raw[0];
+                                            const durH = Math.floor(duration);
+                                            const durM = Math.round((duration - durH) * 60);
+                                            const pad = n => String(n).padStart(2, '0');
+                                            return `${pad(startH)}:${pad(startM)} - ${pad(endH)}:${pad(endM)} (${durH > 0 ? durH + 'h ' : ''}${durM}m)`;
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    min: 0,
+                                    max: 24,
+                                    title: {
+                                        display: true,
+                                        text: 'Hours'
+                                    },
+                                    ticks: {
+                                        stepSize: 2,
+                                        callback: function(value) {
+                                            const startTs = @js($ganttStart->timestamp * 1000);
+                                            const h = new Date(startTs + value * 3600000);
+                                            return h.getHours().toString().padStart(2, '0') + ':00';
+                                        }
+                                    },
+                                    grid: {
+                                        color: 'rgba(0,0,0,0.05)'
+                                    }
+                                },
+                                y: {
+                                    title: {
+                                        display: false
+                                    },
+                                    grid: {
+                                        display: false
+                                    }
+                                }
+                            }
+                        }
+                    });
+                });
+            </script>
+        @endpush
+    @endif
 @endsection
