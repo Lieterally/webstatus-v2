@@ -66,8 +66,10 @@
                 @if (empty($ganttLabels))
                     <p class="text-sm text-base-content/50">No downtime events in the last 24 hours.</p>
                 @else
-                    <div style="height: {{ max(120, count($ganttLabels) * 40 + 60) }}px;">
-                        <canvas id="ganttChart" style="width: 100%; height: 100%;"></canvas>
+                    <div class="overflow-y-auto max-h-80">
+                        <div style="height: {{ max(120, count($ganttLabels) * 50) }}px;">
+                            <canvas id="ganttChart" style="width: 100%; height: 100%;"></canvas>
+                        </div>
                     </div>
                 @endif
             </div>
@@ -276,12 +278,45 @@
                         });
                     }
 
+                    // Plugin to draw alternating row backgrounds
+                    const alternatingRowsPlugin = {
+                        id: 'alternatingRows',
+                        beforeDraw(chart) {
+                            const {
+                                ctx,
+                                chartArea,
+                                scales
+                            } = chart;
+                            if (!scales.y) return;
+
+                            const yScale = scales.y;
+                            const ticks = yScale.ticks;
+
+                            ctx.save();
+                            ticks.forEach((tick, index) => {
+                                if (index % 2 === 0) {
+                                    const y = yScale.getPixelForTick(index);
+                                    const halfHeight = (yScale.height / ticks.length) / 2;
+                                    ctx.fillStyle = 'rgba(0, 0, 0, 0.03)';
+                                    ctx.fillRect(
+                                        chartArea.left,
+                                        y - halfHeight,
+                                        chartArea.width,
+                                        halfHeight * 2
+                                    );
+                                }
+                            });
+                            ctx.restore();
+                        }
+                    };
+
                     new Chart(ctx, {
                         type: 'bar',
                         data: {
                             labels: labels,
                             datasets: datasets,
                         },
+                        plugins: [alternatingRowsPlugin],
                         options: {
                             indexAxis: 'y',
                             responsive: true,
