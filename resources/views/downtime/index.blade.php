@@ -66,8 +66,8 @@
                 @if (empty($ganttLabels))
                     <p class="text-sm text-base-content/50">No downtime events in the last 24 hours.</p>
                 @else
-                    <div class="max-h-[500px] overflow-y-auto overflow-x-hidden">
-                        <div class="relative" style="height: {{ max(500, count($ganttLabels) * 28) }}px;">
+                    <div style="max-height: 400px; overflow-y: auto;">
+                        <div style="height: {{ max(200, count($ganttData) * 28) }}px; position: relative;">
                             <canvas id="ganttChart"></canvas>
                         </div>
                     </div>
@@ -235,109 +235,97 @@
             <script>
                 document.addEventListener('DOMContentLoaded', function() {
                     const ganttData = @js($ganttData);
-                    const labels = @js($ganttLabels);
                     const ctx = document.getElementById('ganttChart');
 
-                    // Group events by site and build layered datasets for alignment
-                    const grouped = {};
+                    // Build one row per event, show site label only on first row per site
+                    const rowLabels = [];
+                    const barData = [];
+                    const barColors = [];
+                    const seen = {};
+
                     ganttData.forEach(event => {
-                        if (!grouped[event.site]) grouped[event.site] = [];
-                        grouped[event.site].push(event);
+                        if (!(event.site in seen)) {
+                            seen[event.site] = true;
+                            rowLabels.push(event.site);
+                        } else {
+                            rowLabels.push('');
+                        }
+                        barData.push([event.start, event.end]);
+                        barColors.push(event.active ? '#DC2626' : '#F87171');
                     });
 
-                    const maxEvents = Math.max(...Object.values(grouped).map(g => g.length), 1);
-                    const datasets = [];
-
-                    for (let layer = 0; layer < maxEvents; layer++) {
-                        const data = labels.map(site => {
-                            const events = grouped[site] || [];
-                            if (layer < events.length) {
-                                return [events[layer].start, events[layer].end];
-                            }
-                            return null;
-                        });
-
-                        const colors = labels.map(site => {
-                            const events = grouped[site] || [];
-                            if (layer < events.length) {
-                                return events[layer].active ? '#DC2626' : '#F87171';
-                            }
-                            return 'transparent';
-                        });
-
-                        datasets.push({
-                            data: data,
-                            backgroundColor: colors,
-                            borderColor: colors.map(c => c === '#DC2626' ? '#991B1B' : (c === '#F87171' ?
-                                '#DC2626' : 'transparent')),
-                            borderWidth: 0,
-                            borderRadius: 999,
-                            borderSkipped: false,
-                            barThickness: 12,
-                            skipNull: true,
-                        });
-                    }
-
-                    // Plugin to draw alternating row backgrounds
+                    // Alternating row backgrounds plugin
                     const alternatingRowsPlugin = {
                         id: 'alternatingRows',
                         beforeDraw(chart) {
                             const {
-                                ctx,
+                                ctx: c,
                                 chartArea,
                                 scales
                             } = chart;
-                            if (!scales.y) return;
-
+                            if (!scales.y || !chartArea) return;
                             const yScale = scales.y;
-                            const ticks = yScale.ticks;
+                            const rowHeight = yScale.height / rowLabels.length;
+                            let siteIdx = 0;
 
-                            ctx.save();
-                            ticks.forEach((tick, index) => {
-                                if (index % 2 === 0) {
-                                    const y = yScale.getPixelForTick(index);
-                                    const halfHeight = (yScale.height / ticks.length) / 2;
-                                    ctx.fillStyle = 'rgba(0, 0, 0, 0.03)';
-                                    ctx.fillRect(
-                                        chartArea.left,
-                                        y - halfHeight,
-                                        chartArea.width,
-                                        halfHeight * 2
-                                    );
+                            c.save();
+                            rowLabels.forEach((label, i) => {
+                                if (label !== '') {
+                                    if (siteIdx % 2 === 0) {
+                                        const y = yScale.getPixelForValue(i) - rowHeight / 2;
+                                        c.fillStyle = 'rgba(0, 0, 0, 0.03)';
+                                        c.fillRect(chartArea.left, y, chartArea.width, rowHeight);
+                                    }
+                                    siteIdx++;
                                 }
                             });
-                            ctx.restore();
+                            c.restore();
                         }
                     };
 
                     new Chart(ctx, {
                         type: 'bar',
                         data: {
-                            labels: labels,
-                            datasets: datasets,
+                            labels: rowLabels,
+                            datasets: [{
+                                data: barData,
+                                backgroundColor: barColors,
+                                borderWidth: 0,
+                                borderRadius: 999,
+                                borderSkipped: false,
+                                barThickness: 12,
+                            }],
                         },
                         plugins: [alternatingRowsPlugin],
                         options: {
                             indexAxis: 'y',
                             responsive: true,
-                            maintainAspectRatio: true,
+                            maintainAspectRatio: false,
                             plugins: {
                                 legend: {
                                     display: false
                                 },
                                 tooltip: {
                                     callbacks: {
+                                        title: function(items) {
+                                            // Show site name in tooltip even for empty-label rows
+                                            const idx = items[0].dataIndex;
+                                            for (let i = idx; i >= 0; i--) {
+                                                if (rowLabels[i] !== '') return rowLabels[i];
+                                            }
+                                            return '';
+                                        },
                                         label: function(context) {
-                                            const raw = context.raw.x;
+                                            const raw = context.raw;
+                                            const pad = n => String(n).padStart(2, '0');
                                             const startH = Math.floor(raw[0]);
                                             const startM = Math.round((raw[0] - startH) * 60);
                                             const endH = Math.floor(raw[1]);
                                             const endM = Math.round((raw[1] - endH) * 60);
-                                            const duration = raw[1] - raw[0];
-                                            const durH = Math.floor(duration);
-                                            const durM = Math.round((duration - durH) * 60);
-                                            const pad = n => String(n).padStart(2, '0');
-                                            return `${pad(startH)}:${pad(startM)} - ${pad(endH)}:${pad(endM)} (${durH > 0 ? durH + 'h ' : ''}${durM}m)`;
+                                            const dur = raw[1] - raw[0];
+                                            const durH = Math.floor(dur);
+                                            const durM = Math.round((dur - durH) * 60);
+                                            return `${pad(startH)}:${pad(startM)} – ${pad(endH)}:${pad(endM)} (${durH > 0 ? durH + 'h ' : ''}${durM}m)`;
                                         }
                                     }
                                 }
@@ -363,9 +351,6 @@
                                     }
                                 },
                                 y: {
-                                    title: {
-                                        display: false
-                                    },
                                     grid: {
                                         display: false
                                     }
