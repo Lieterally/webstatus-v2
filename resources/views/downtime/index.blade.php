@@ -269,9 +269,9 @@
                             max: @js(now()->getTimestampMs()),
                             labels: {
                                 datetimeUTC: false,
-                                format: 'HH:00',
+                                format: 'HH:mm',
                             },
-                            tickAmount: 12,
+                            tickAmount: 24,
                         },
                         yaxis: {
                             labels: {
