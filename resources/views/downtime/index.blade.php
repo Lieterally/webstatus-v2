@@ -66,9 +66,9 @@
                 @if (empty($ganttLabels))
                     <p class="text-sm text-base-content/50">No downtime events in the last 24 hours.</p>
                 @else
-                    <div class="overflow-y-auto max-h-80">
-                        <div style="height: {{ max(120, count($ganttLabels) * 50) }}px;">
-                            <canvas id="ganttChart" style="width: 100%; height: 100%;"></canvas>
+                    <div class="overflow-y-auto" style="max-height: 400px;">
+                        <div style="height: {{ max(150, count($ganttLabels) * 50) }}px; min-height: 100%;">
+                            <canvas id="ganttChart"></canvas>
                         </div>
                     </div>
                 @endif
@@ -273,8 +273,8 @@
                             borderWidth: 0,
                             borderRadius: 999,
                             borderSkipped: false,
-                            barPercentage: 0.5,
-                            categoryPercentage: 0.8,
+                            barThickness: 16,
+                            skipNull: true,
                         });
                     }
 
