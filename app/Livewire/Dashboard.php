@@ -10,6 +10,7 @@ use App\Services\MonitoringServiceInterface;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Livewire\Attributes\Computed;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -112,6 +113,7 @@ class Dashboard extends Component
      */
     public function updatedSiteResponseTimeFilter(): void
     {
+        unset($this->selectedSiteData); // bust cache so chart data re-fetches with new filter
         $this->dispatch('siteChartsUpdated', [
             'responseTimeData' => $this->getSiteResponseTimeData(),
         ]);
@@ -122,6 +124,7 @@ class Dashboard extends Component
      */
     public function updatedSiteDowntimeFilter(): void
     {
+        unset($this->selectedSiteData); // bust cache so chart data re-fetches with new filter
         $this->dispatch('siteChartsUpdated', [
             'downtimeData' => $this->getSiteDowntimeData(),
         ]);
@@ -234,6 +237,7 @@ class Dashboard extends Component
         $this->selectedSiteId = $siteId;
         $this->siteResponseTimeFilter = '1D';
         $this->siteDowntimeFilter = '1D';
+        unset($this->selectedSiteData); // bust the Computed cache so fresh data loads
     }
 
     /**
@@ -257,6 +261,9 @@ class Dashboard extends Component
         $monitoringService->refreshSite($siteId);
 
         $this->isSiteRefreshing = false;
+
+        // Bust the Computed cache so the detail panel reloads fresh data
+        unset($this->selectedSiteData);
 
         // Reload data
         $this->loadDashboardData();
@@ -288,8 +295,11 @@ class Dashboard extends Component
 
     /**
      * Get detailed data for the selected site including pages, charts, and down info.
+     * Cached (persist: true) so it does not re-run on every 2-second poll tick.
+     * Call `unset($this->selectedSiteData)` to invalidate when fresh data is needed.
      */
-    public function getSelectedSiteDataProperty(): ?array
+    #[Computed(persist: true, seconds: 30)]
+    public function selectedSiteData(): ?array
     {
         if (!$this->selectedSiteId) {
             return null;
@@ -329,28 +339,36 @@ class Dashboard extends Component
 
     /**
      * Get the latest check results for each page of a site.
+     * Uses a single batched query instead of one query per page.
      */
     private function getLatestPageResults(Site $site): array
     {
-        $results = [];
+        $pageIds = $site->pages->pluck('id')->toArray();
 
-        foreach ($site->pages as $page) {
-            $latestResult = CheckResult::where('page_id', $page->id)
-                ->orderBy('checked_at', 'desc')
-                ->first();
-
-            $results[] = [
-                'page_id' => $page->id,
-                'path' => $page->path,
-                'full_url' => rtrim($site->base_url, '/') . $page->path,
-                'http_code' => $latestResult?->http_code ?? null,
-                'response_time_ms' => $latestResult?->response_time_ms ?? null,
-                'error_type' => $latestResult?->error_type?->value ?? null,
-                'checked_at' => $latestResult?->checked_at?->format('Y-m-d H:i:s') ?? null,
-            ];
+        if (empty($pageIds)) {
+            return [];
         }
 
-        return $results;
+        // Single query: fetch the latest check result per page via MAX(id) subquery
+        $latestResults = CheckResult::whereIn('page_id', $pageIds)
+            ->whereIn('id', function ($sub) use ($pageIds) {
+                $sub->selectRaw('MAX(id)')
+                    ->from('check_results')
+                    ->whereIn('page_id', $pageIds)
+                    ->groupBy('page_id');
+            })
+            ->get()
+            ->keyBy('page_id');
+
+        return $site->pages->map(fn($page) => [
+            'page_id'          => $page->id,
+            'path'             => $page->path,
+            'full_url'         => rtrim($site->base_url, '/') . $page->path,
+            'http_code'        => $latestResults[$page->id]?->http_code ?? null,
+            'response_time_ms' => $latestResults[$page->id]?->response_time_ms ?? null,
+            'error_type'       => $latestResults[$page->id]?->error_type?->value ?? null,
+            'checked_at'       => $latestResults[$page->id]?->checked_at?->format('Y-m-d H:i:s') ?? null,
+        ])->toArray();
     }
 
     /**
