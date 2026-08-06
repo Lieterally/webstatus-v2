@@ -113,7 +113,7 @@ class Dashboard extends Component
      */
     public function updatedSiteResponseTimeFilter(): void
     {
-        unset($this->selectedSiteData); // bust cache so chart data re-fetches with new filter
+        unset($this->selectedSiteData); // bust the in-request Computed cache
         $this->dispatch('siteChartsUpdated', [
             'responseTimeData' => $this->getSiteResponseTimeData(),
         ]);
@@ -124,7 +124,7 @@ class Dashboard extends Component
      */
     public function updatedSiteDowntimeFilter(): void
     {
-        unset($this->selectedSiteData); // bust cache so chart data re-fetches with new filter
+        unset($this->selectedSiteData); // bust the in-request Computed cache
         $this->dispatch('siteChartsUpdated', [
             'downtimeData' => $this->getSiteDowntimeData(),
         ]);
@@ -237,7 +237,7 @@ class Dashboard extends Component
         $this->selectedSiteId = $siteId;
         $this->siteResponseTimeFilter = '1D';
         $this->siteDowntimeFilter = '1D';
-        unset($this->selectedSiteData); // bust the Computed cache so fresh data loads
+        $this->bustSelectedSiteCache();
     }
 
     /**
@@ -262,8 +262,8 @@ class Dashboard extends Component
 
         $this->isSiteRefreshing = false;
 
-        // Bust the Computed cache so the detail panel reloads fresh data
-        unset($this->selectedSiteData);
+        // Bust the site detail cache so the panel reloads fresh data
+        $this->bustSelectedSiteCache();
 
         // Reload data
         $this->loadDashboardData();
@@ -295,46 +295,65 @@ class Dashboard extends Component
 
     /**
      * Get detailed data for the selected site including pages, charts, and down info.
-     * Cached (persist: true) so it does not re-run on every 2-second poll tick.
-     * Call `unset($this->selectedSiteData)` to invalidate when fresh data is needed.
+     * Cached via Cache::remember (keyed by site ID + filters) so it does not re-run
+     * on every 2-second poll tick. Call bustSelectedSiteCache() to invalidate.
      */
-    #[Computed(persist: true, seconds: 30)]
+    #[Computed]
     public function selectedSiteData(): ?array
     {
         if (!$this->selectedSiteId) {
             return null;
         }
 
-        $site = Site::with(['pages', 'responsiblePerson', 'category'])->find($this->selectedSiteId);
+        $cacheKey = "site_detail_{$this->selectedSiteId}_{$this->siteResponseTimeFilter}_{$this->siteDowntimeFilter}";
 
-        if (!$site) {
-            $this->selectedSiteId = null;
-            return null;
+        return Cache::remember($cacheKey, 30, function () {
+            $site = Site::with(['pages', 'responsiblePerson', 'category'])->find($this->selectedSiteId);
+
+            if (!$site) {
+                return null;
+            }
+
+            // Get latest check results for each page
+            $pageResults = $this->getLatestPageResults($site);
+
+            // Get response time chart data from rollup tables
+            $responseTimeData = $this->getSiteResponseTimeData();
+
+            // Get downtime chart data from rollup tables
+            $downtimeData = $this->getSiteDowntimeData();
+
+            // Calculate down duration if site is down
+            $downInfo = $this->getDownInfo($site);
+
+            // Get downtime history (last 30 days of outage events)
+            $downtimeHistory = $this->getDowntimeHistory($site);
+
+            return [
+                'site'             => $site,
+                'pageResults'      => $pageResults,
+                'responseTimeData' => $responseTimeData,
+                'downtimeData'     => $downtimeData,
+                'downInfo'         => $downInfo,
+                'downtimeHistory'  => $downtimeHistory,
+            ];
+        });
+    }
+
+    /**
+     * Bust the site detail cache for the currently selected site.
+     */
+    private function bustSelectedSiteCache(): void
+    {
+        if (!$this->selectedSiteId) {
+            return;
         }
-
-        // Get latest check results for each page
-        $pageResults = $this->getLatestPageResults($site);
-
-        // Get response time chart data from rollup tables
-        $responseTimeData = $this->getSiteResponseTimeData();
-
-        // Get downtime chart data from rollup tables
-        $downtimeData = $this->getSiteDowntimeData();
-
-        // Calculate down duration if site is down
-        $downInfo = $this->getDownInfo($site);
-
-        // Get downtime history (last 30 days of outage events)
-        $downtimeHistory = $this->getDowntimeHistory($site);
-
-        return [
-            'site' => $site,
-            'pageResults' => $pageResults,
-            'responseTimeData' => $responseTimeData,
-            'downtimeData' => $downtimeData,
-            'downInfo' => $downInfo,
-            'downtimeHistory' => $downtimeHistory,
-        ];
+        foreach (['1D', '3D', '7D', '1M', '3M', '6M', '1Y'] as $rtf) {
+            foreach (['1D', '3D', '7D', '1M', '3M', '6M', '1Y'] as $dtf) {
+                Cache::forget("site_detail_{$this->selectedSiteId}_{$rtf}_{$dtf}");
+            }
+        }
+        unset($this->selectedSiteData);
     }
 
     /**
