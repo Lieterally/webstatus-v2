@@ -305,15 +305,17 @@ class Dashboard extends Component
             return null;
         }
 
+        // Always load the site model fresh — never serialize Eloquent models into the cache,
+        // as deserialization fails when the class isn't loaded at cache-read time.
+        $site = Site::with(['pages', 'responsiblePerson', 'category'])->find($this->selectedSiteId);
+
+        if (!$site) {
+            return null;
+        }
+
         $cacheKey = "site_detail_{$this->selectedSiteId}_{$this->siteResponseTimeFilter}_{$this->siteDowntimeFilter}";
 
-        return Cache::remember($cacheKey, 30, function () {
-            $site = Site::with(['pages', 'responsiblePerson', 'category'])->find($this->selectedSiteId);
-
-            if (!$site) {
-                return null;
-            }
-
+        $cached = Cache::remember($cacheKey, 30, function () use ($site) {
             // Get latest check results for each page
             $pageResults = $this->getLatestPageResults($site);
 
@@ -330,7 +332,6 @@ class Dashboard extends Component
             $downtimeHistory = $this->getDowntimeHistory($site);
 
             return [
-                'site'             => $site,
                 'pageResults'      => $pageResults,
                 'responseTimeData' => $responseTimeData,
                 'downtimeData'     => $downtimeData,
@@ -338,6 +339,9 @@ class Dashboard extends Component
                 'downtimeHistory'  => $downtimeHistory,
             ];
         });
+
+        // Merge the live model back in so the blade always gets a fully-loaded object
+        return array_merge(['site' => $site], $cached);
     }
 
     /**
