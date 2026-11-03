@@ -25,6 +25,10 @@ Artisan::command('inspire', function () {
 Schedule::command('app:run-monitoring-cycle')
     ->everyMinute()
     ->when(function () {
+        if (!SystemConfig::isMonitoringEnabled()) {
+            return false;
+        }
+
         $intervalMinutes = (int) SystemConfig::getValue('cycle_interval_minutes', '10');
         $lastRunValue = SystemConfig::getValue('last_cycle_run_at');
 

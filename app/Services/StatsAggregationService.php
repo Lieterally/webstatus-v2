@@ -10,6 +10,7 @@ use App\Models\MonthlyStat;
 use App\Models\Site;
 use App\Models\WeeklyStat;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 class StatsAggregationService
 {
@@ -226,6 +227,9 @@ class StatsAggregationService
         $sites = Site::all(); // refresh for this section
 
         foreach ($sites as $site) {
+            // Check results don't show when monitoring was turned off, so keep those times for the rebuild
+            $monitoringStops = $this->getMonitoringStops($site->id);
+
             // Delete any existing backfilled records for this site to avoid duplicates
             DowntimeHistory::where('site_id', $site->id)->delete();
 
@@ -266,6 +270,21 @@ class StatsAggregationService
             $outagePages = [];
 
             foreach ($cycleEntries as $entry) {
+                $stoppedAt = $outageStart ? $this->findMonitoringStop($monitoringStops, $outageStart, $entry['time']) : null;
+
+                if ($stoppedAt) {
+                    DowntimeHistory::create([
+                        'site_id' => $site->id,
+                        'started_at' => $outageStart,
+                        'ended_at' => $stoppedAt,
+                        'duration_seconds' => (int) $outageStart->diffInSeconds($stoppedAt),
+                        'affected_pages' => array_values($outagePages),
+                        'status' => 'monitoring_stopped',
+                    ]);
+                    $outageStart = null;
+                    $outagePages = [];
+                }
+
                 if ($entry['down'] && $outageStart === null) {
                     $outageStart = $entry['time'];
                     $outagePages = $entry['downPages'];
@@ -288,13 +307,15 @@ class StatsAggregationService
 
             // If still in outage at end of data
             if ($outageStart !== null) {
+                $stoppedAt = $this->findMonitoringStop($monitoringStops, $outageStart, Carbon::now());
+
                 DowntimeHistory::create([
                     'site_id' => $site->id,
                     'started_at' => $outageStart,
-                    'ended_at' => null,
-                    'duration_seconds' => null,
+                    'ended_at' => $stoppedAt,
+                    'duration_seconds' => $stoppedAt ? (int) $outageStart->diffInSeconds($stoppedAt) : null,
                     'affected_pages' => array_values($outagePages),
-                    'status' => 'active',
+                    'status' => $stoppedAt ? 'monitoring_stopped' : 'active',
                 ]);
             }
         }
@@ -470,10 +491,19 @@ class StatsAggregationService
 
         usort($cycleTimestamps, fn($a, $b) => $a['time']->timestamp - $b['time']->timestamp);
 
+        $monitoringStops = $this->getMonitoringStops($siteId);
         $downtimeSeconds = 0;
         $outageStart = null;
 
         foreach ($cycleTimestamps as $current) {
+            // Time after monitoring was turned off isn't downtime, even if the next check is up
+            $stoppedAt = $outageStart ? $this->findMonitoringStop($monitoringStops, $outageStart, $current['time']) : null;
+
+            if ($stoppedAt) {
+                $downtimeSeconds += $outageStart->diffInSeconds($stoppedAt);
+                $outageStart = null;
+            }
+
             if ($current['down'] && $outageStart === null) {
                 $outageStart = $current['time'];
             } elseif (!$current['down'] && $outageStart !== null) {
@@ -484,9 +514,30 @@ class StatsAggregationService
 
         if ($outageStart !== null) {
             $closeTime = Carbon::now()->lt($end) ? Carbon::now() : $end;
+            $closeTime = $this->findMonitoringStop($monitoringStops, $outageStart, $closeTime) ?? $closeTime;
             $downtimeSeconds += $outageStart->diffInSeconds($closeTime);
         }
 
         return $downtimeSeconds;
+    }
+
+    /**
+     * Get the times monitoring was turned off during an outage for a site, oldest first.
+     */
+    private function getMonitoringStops(int $siteId): Collection
+    {
+        return DowntimeHistory::where('site_id', $siteId)
+            ->where('status', 'monitoring_stopped')
+            ->orderBy('ended_at')
+            ->get()
+            ->pluck('ended_at');
+    }
+
+    /**
+     * Find the first time monitoring was turned off within a time range.
+     */
+    private function findMonitoringStop(Collection $monitoringStops, Carbon $from, Carbon $to): ?Carbon
+    {
+        return $monitoringStops->first(fn(Carbon $stoppedAt) => $stoppedAt->gte($from) && $stoppedAt->lte($to));
     }
 }

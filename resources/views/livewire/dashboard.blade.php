@@ -3,6 +3,7 @@
     cycleInProgress: @entangle('cycleInProgress'),
     cycleIntervalSeconds: @entangle('cycleIntervalSeconds'),
     isRefreshing: @entangle('isRefreshing'),
+    monitoringEnabled: @entangle('monitoringEnabled'),
     intervalId: null,
 
     init() {
@@ -46,7 +47,7 @@
 
         {{-- Refresh All Button + Log Button --}}
         <div class="flex items-center gap-2">
-            <button wire:click="refreshAll" wire:loading.attr="disabled" x-bind:disabled="cycleInProgress || isRefreshing"
+            <button wire:click="refreshAll" wire:loading.attr="disabled" x-bind:disabled="cycleInProgress || isRefreshing || !monitoringEnabled"
                 class="btn btn-primary btn-md gap-2">
 
                 <!-- Loading Icon -->
@@ -81,6 +82,9 @@
             </div>
             <div class="stat-title">Total Sites</div>
             <div class="stat-value text-base-content">{{ $totalSites }}</div>
+            @if ($sitesUnmonitored > 0)
+                <div class="stat-desc">{{ $sitesUnmonitored }} not monitored</div>
+            @endif
         </div>
 
         {{-- Sites Down --}}
@@ -126,7 +130,10 @@
                         <span class="text-xs font-medium text-warning">Refreshing... (paused)</span>
                     </div>
                 </template>
-                <template x-if="!cycleInProgress && !isRefreshing">
+                <template x-if="!cycleInProgress && !isRefreshing && !monitoringEnabled">
+                    <span class="text-xs font-medium text-warning">Monitoring is turned off</span>
+                </template>
+                <template x-if="!cycleInProgress && !isRefreshing && monitoringEnabled">
                     <div class="flex items-center gap-1.5">
                         <svg class="h-3.5 w-3.5 text-base-content/40" fill="none" stroke="currentColor"
                             viewBox="0 0 24 24">
@@ -499,6 +506,10 @@
                             \App\Enums\SiteStatus::PartiallyDown => 'Partially Down',
                             \App\Enums\SiteStatus::TotallyDown => 'Totally Down',
                         };
+                        if (!$siteData['site']->is_monitored) {
+                            $badgeClass = 'badge-ghost';
+                            $statusLabel = 'Not Monitored';
+                        }
                     @endphp
                     <span class="badge {{ $badgeClass }}">
                         {{ $statusLabel }}
@@ -507,7 +518,7 @@
 
                 {{-- Per-Site Refresh Button --}}
                 <button wire:click="refreshSite({{ $siteData['site']->id }})" wire:loading.attr="disabled"
-                    wire:target="refreshSite" class="btn btn-primary btn-sm gap-2">
+                    wire:target="refreshSite" class="btn btn-primary btn-sm gap-2" @disabled(!$siteData['site']->is_monitored || !$monitoringEnabled)>
                     <svg wire:loading wire:target="refreshSite" class="animate-spin h-4 w-4 text-white"
                         xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
@@ -527,7 +538,7 @@
             </div>
 
             {{-- Down Info (shown when site is down) --}}
-            @if ($siteData['downInfo'])
+            @if ($siteData['downInfo'] && $siteData['site']->is_monitored)
                 <div class="px-6 py-3 bg-error/10 border-b border-error/20">
                     <div class="flex flex-wrap items-center gap-4 text-sm">
                         <div class="flex items-center gap-1.5">
@@ -788,6 +799,11 @@
                                 \App\Enums\SiteStatus::PartiallyDown => 'Partially Down',
                                 \App\Enums\SiteStatus::TotallyDown => 'Totally Down',
                             };
+                            if (!$site->is_monitored) {
+                                $cardBorder = 'border-l-base-300';
+                                $cardBadge = 'badge-ghost';
+                                $cardStatusText = 'Not Monitored';
+                            }
                         @endphp
                         <div wire:click="selectSite({{ $site->id }})"
                             class="card bg-base-100 shadow-sm border-l-4 {{ $cardBorder }} p-3 cursor-pointer hover:shadow-md transition-shadow">
@@ -834,6 +850,10 @@
                                         \App\Enums\SiteStatus::PartiallyDown => 'Partially Down',
                                         \App\Enums\SiteStatus::TotallyDown => 'Totally Down',
                                     };
+                                    if (!$site->is_monitored) {
+                                        $tableBadge = 'badge-ghost';
+                                        $tableStatusText = 'Not Monitored';
+                                    }
                                     $httpCode = $siteMetrics[$site->id]['latest_http_code'] ?? null;
                                     $avgTime24h = $siteMetrics[$site->id]['avg_response_time_24h'] ?? 0;
                                 @endphp

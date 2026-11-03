@@ -9,11 +9,13 @@ use App\Enums\SiteStatus;
 use App\Enums\TriggerType;
 use App\Models\CheckingCycle;
 use App\Models\CheckResult;
+use App\Models\DowntimeHistory;
 use App\Models\Site;
 use App\Models\SystemConfig;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class MonitoringService implements MonitoringServiceInterface
@@ -40,7 +42,7 @@ class MonitoringService implements MonitoringServiceInterface
      * Execute a full checking cycle for all sites.
      *
      * Flow:
-     * 1. Fetch all sites with pages
+     * 1. Fetch all monitored sites with pages
      * 2. Call HealthCheckService::checkAllSites()
      * 3. Use StatusDeterminationService::determineStatus() for each site
      * 4. Persist CheckResult records
@@ -56,8 +58,8 @@ class MonitoringService implements MonitoringServiceInterface
         Cache::put(self::CYCLE_IN_PROGRESS_KEY, true, 300); // 5 minute max lock (safety net)
 
         try {
-            // 1. Fetch all sites with pages
-            $sites = Site::with('pages')->get();
+            // 1. Fetch all monitored sites with pages
+            $sites = Site::with('pages')->where('is_monitored', true)->get();
 
             // Clear live log for this new cycle
             Cache::forget('monitoring_cycle_live_log');
@@ -68,6 +70,14 @@ class MonitoringService implements MonitoringServiceInterface
 
             // 2.5 Retry down sites once to reduce false positives
             $siteResults = $this->retryDownSites($sites, $siteResults);
+
+            // Drop sites whose monitoring was turned off while the checks were running
+            $monitoredIds = SystemConfig::isMonitoringEnabled()
+                ? Site::where('is_monitored', true)->pluck('id')
+                : collect();
+            $siteResults = $siteResults
+                ->filter(fn(SiteCheckResult $result) => $monitoredIds->contains($result->siteId))
+                ->values();
 
             // 3. Create CheckingCycle record
             $cycle = CheckingCycle::create([
@@ -183,6 +193,86 @@ class MonitoringService implements MonitoringServiceInterface
         }
 
         return $siteResult;
+    }
+
+    /**
+     * Turn monitoring on or off for a site.
+     *
+     * Checks stop while a site is unmonitored, so its state can't be trusted past that point.
+     * Any open outage is closed as 'monitoring_stopped' (not recovered) and the down state is
+     * cleared, so turning monitoring back on starts fresh: no recovery alert, and a site that
+     * is still down opens a new outage and alerts again at the usual threshold.
+     */
+    public function setMonitored(Site $site, bool $isMonitored): void
+    {
+        if ($site->is_monitored === $isMonitored) {
+            return;
+        }
+
+        DB::transaction(function () use ($site, $isMonitored) {
+            $this->closeOutagesAndClearDownState($site);
+            $site->update(['is_monitored' => $isMonitored]);
+        });
+    }
+
+    /**
+     * Turn monitoring cycles on or off globally.
+     *
+     * Turning off treats every down site the same way as setMonitored(), so turning back on
+     * starts fresh. Each site's own is_monitored setting is left unchanged.
+     */
+    public function setMonitoringEnabled(bool $isEnabled): void
+    {
+        if (SystemConfig::isMonitoringEnabled() === $isEnabled) {
+            return;
+        }
+
+        DB::transaction(function () use ($isEnabled) {
+            SystemConfig::updateOrCreate(
+                ['key' => 'is_monitoring'],
+                ['value' => $isEnabled ? '1' : '0', 'updated_at' => now()],
+            );
+
+            if ($isEnabled) {
+                return;
+            }
+
+            $sitesToClear = Site::where('status', '!=', SiteStatus::Up)
+                ->orWhereIn('id', DowntimeHistory::where('status', 'active')->select('site_id'))
+                ->get();
+
+            foreach ($sitesToClear as $site) {
+                $this->closeOutagesAndClearDownState($site);
+            }
+        });
+    }
+
+    /**
+     * Close a site's open outages as 'monitoring_stopped' and clear its down state.
+     */
+    private function closeOutagesAndClearDownState(Site $site): void
+    {
+        $endedAt = now();
+
+        $activeRecords = DowntimeHistory::where('site_id', $site->id)
+            ->where('status', 'active')
+            ->get();
+
+        foreach ($activeRecords as $record) {
+            $record->update([
+                'ended_at' => $endedAt,
+                'duration_seconds' => (int) $record->started_at->diffInSeconds($endedAt),
+                'status' => 'monitoring_stopped',
+            ]);
+        }
+
+        $site->update([
+            'status' => SiteStatus::Up,
+            'consecutive_down_count' => 0,
+            'notification_cycle_counter' => 0,
+            'notification_sent' => false,
+            'first_down_at' => null,
+        ]);
     }
 
     /**

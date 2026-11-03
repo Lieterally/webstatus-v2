@@ -21,6 +21,7 @@ class SystemConfigController extends Controller
      */
     public function index(): View
     {
+        $isMonitoring = SystemConfig::isMonitoringEnabled();
         $cycleInterval = $this->monitoringService->getCycleInterval();
         $notificationCycleThreshold = $this->notificationService->getNotificationCycleThreshold();
         $connectionTimeout = (int) (SystemConfig::getValue('connection_timeout_seconds') ?? 20);
@@ -28,6 +29,7 @@ class SystemConfigController extends Controller
         $concurrencyLimit = (int) (SystemConfig::getValue('concurrency_limit') ?? 50);
 
         return view('system-config.index', compact(
+            'isMonitoring',
             'cycleInterval',
             'notificationCycleThreshold',
             'connectionTimeout',
@@ -42,6 +44,7 @@ class SystemConfigController extends Controller
     public function update(Request $request): RedirectResponse
     {
         $validated = $request->validate([
+            'is_monitoring' => ['sometimes', 'boolean'],
             'cycle_interval_minutes' => ['required', 'integer', 'min:5', 'max:1440'],
             'notification_cycle_threshold' => ['required', 'integer', 'min:1', 'max:100'],
             'connection_timeout_seconds' => ['required', 'integer', 'min:1', 'max:60'],
@@ -69,6 +72,10 @@ class SystemConfigController extends Controller
             'concurrency_limit.min' => 'The concurrency limit must be at least 5.',
             'concurrency_limit.max' => 'The concurrency limit must not exceed 100.',
         ]);
+
+        if (array_key_exists('is_monitoring', $validated)) {
+            $this->monitoringService->setMonitoringEnabled((bool) $validated['is_monitoring']);
+        }
 
         $this->monitoringService->setCycleInterval((int) $validated['cycle_interval_minutes']);
         $this->notificationService->setNotificationCycleThreshold((int) $validated['notification_cycle_threshold']);

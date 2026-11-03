@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\ITStaff;
 use App\Models\Page;
 use App\Models\Site;
+use App\Services\MonitoringServiceInterface;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 
@@ -94,7 +95,7 @@ class SiteController extends Controller
     /**
      * Update the specified site in storage.
      */
-    public function update(UpdateSiteRequest $request, Site $site): RedirectResponse
+    public function update(UpdateSiteRequest $request, Site $site, MonitoringServiceInterface $monitoringService): RedirectResponse
     {
         $validated = $request->validated();
 
@@ -105,6 +106,10 @@ class SiteController extends Controller
             'description' => $validated['description'] ?? null,
             'responsible_person_id' => $validated['responsible_person_id'],
         ]);
+
+        if (array_key_exists('is_monitored', $validated)) {
+            $monitoringService->setMonitored($site, (bool) $validated['is_monitored']);
+        }
 
         // Sync pages: only add new and remove deleted, keep unchanged ones to preserve check history
         $existingPages = $site->pages()->pluck('path', 'id')->toArray();

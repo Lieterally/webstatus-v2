@@ -40,6 +40,14 @@ class DowntimeHistory extends Model
     }
 
     /**
+     * Whether this outage was closed because monitoring was turned off, not because the site recovered.
+     */
+    public function wasMonitoringStopped(): bool
+    {
+        return $this->status === 'monitoring_stopped';
+    }
+
+    /**
      * Get the live duration in seconds (uses ended_at if resolved, now if active).
      */
     public function getLiveDurationSeconds(): int

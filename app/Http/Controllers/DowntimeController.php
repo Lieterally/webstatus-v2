@@ -41,6 +41,8 @@ class DowntimeController extends Controller
             $query->where('status', 'active');
         } elseif ($status === 'resolved') {
             $query->where('status', 'resolved');
+        } elseif ($status === 'monitoring_stopped') {
+            $query->where('status', 'monitoring_stopped');
         }
 
         $events = $query->paginate(25)->withQueryString();
@@ -54,8 +56,8 @@ class DowntimeController extends Controller
         $totalEvents = (clone $summaryQuery)->count();
         $activeNow = DowntimeHistory::where('status', 'active')->count();
 
-        // Total downtime: sum resolved durations + live duration for active ones
-        $resolvedSeconds = (clone $summaryQuery)->where('status', 'resolved')->sum('duration_seconds');
+        // Total downtime: sum closed durations + live duration for active ones
+        $resolvedSeconds = (clone $summaryQuery)->where('status', '!=', 'active')->sum('duration_seconds');
         $activeSeconds = (clone $summaryQuery)->where('status', 'active')->get()
             ->sum(fn($r) => $r->getLiveDurationSeconds());
         $totalDowntimeSeconds = $resolvedSeconds + $activeSeconds;
@@ -73,7 +75,7 @@ class DowntimeController extends Controller
 
         // --- Per-site breakdown ---
         $siteBreakdown = (clone $summaryQuery)
-            ->selectRaw('site_id, COUNT(*) as outage_count, SUM(CASE WHEN status = "resolved" THEN duration_seconds ELSE 0 END) as total_seconds')
+            ->selectRaw('site_id, COUNT(*) as outage_count, SUM(CASE WHEN status != "active" THEN duration_seconds ELSE 0 END) as total_seconds')
             ->groupBy('site_id')
             ->with('site')
             ->orderByDesc('outage_count')

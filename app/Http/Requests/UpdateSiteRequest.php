@@ -35,6 +35,7 @@ class UpdateSiteRequest extends FormRequest
             'pages' => ['required', 'array', 'min:1', 'max:50'],
             'pages.*' => ['required', 'string', 'regex:/^\//'],
             'responsible_person_id' => ['required', 'exists:it_staffs,id'],
+            'is_monitored' => ['sometimes', 'boolean'],
         ];
     }
 

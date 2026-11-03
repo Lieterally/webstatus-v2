@@ -78,8 +78,8 @@ class NotificationService implements NotificationServiceInterface
 
         // If a recovery happened but there are still other down sites, send a consolidated update
         if ($recoveryTriggered) {
-            $downSitesExist = Site::where('status', SiteStatus::PartiallyDown)
-                ->orWhere('status', SiteStatus::TotallyDown)
+            $downSitesExist = Site::where('is_monitored', true)
+                ->whereIn('status', [SiteStatus::PartiallyDown, SiteStatus::TotallyDown])
                 ->exists();
 
             // Don't send consolidated if all sites are now up (recovery message was already sent)
@@ -91,6 +91,7 @@ class NotificationService implements NotificationServiceInterface
 
         // Check global repeat timer: if any sites are still down with notification_sent=true
         $sitesWithActiveNotification = Site::where('notification_sent', true)
+            ->where('is_monitored', true)
             ->where(function ($q) {
                 $q->where('status', SiteStatus::PartiallyDown)
                     ->orWhere('status', SiteStatus::TotallyDown);
@@ -117,6 +118,7 @@ class NotificationService implements NotificationServiceInterface
             $q->where('status', SiteStatus::PartiallyDown)
                 ->orWhere('status', SiteStatus::TotallyDown);
         })
+            ->where('is_monitored', true)
             ->whereNotNull('first_down_at')
             ->orderBy('first_down_at')
             ->get();

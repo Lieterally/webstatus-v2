@@ -13,6 +13,7 @@ class SystemConfigSeeder extends Seeder
     public function run(): void
     {
         $configs = [
+            ['key' => 'is_monitoring', 'value' => '1', 'updated_at' => now()],
             ['key' => 'cycle_interval_minutes', 'value' => '10', 'updated_at' => now()],
             ['key' => 'notification_cycle_threshold', 'value' => '6', 'updated_at' => now()],
             ['key' => 'false_positive_threshold', 'value' => '3', 'updated_at' => now()],

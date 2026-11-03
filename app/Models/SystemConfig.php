@@ -30,4 +30,12 @@ class SystemConfig extends Model
 
         return $config?->value ?? $default;
     }
+
+    /**
+     * Whether monitoring cycles are globally turned on.
+     */
+    public static function isMonitoringEnabled(): bool
+    {
+        return static::getValue('is_monitoring', '1') === '1';
+    }
 }

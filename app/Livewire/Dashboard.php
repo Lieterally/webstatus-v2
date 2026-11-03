@@ -26,6 +26,12 @@ class Dashboard extends Component
     /** Number of sites that are up */
     public int $sitesUp = 0;
 
+    /** Sites excluded from checking cycles */
+    public int $sitesUnmonitored = 0;
+
+    /** Whether monitoring cycles are globally turned on */
+    public bool $monitoringEnabled = true;
+
     /** Datetime of the last completed checking cycle (YYYY-MM-DD HH:mm:ss) or null */
     public ?string $lastCycleDatetime = null;
 
@@ -157,7 +163,10 @@ class Dashboard extends Component
         }
 
         // Auto-trigger cycle when countdown has expired and no cycle is running
-        if ($cycleState->countdownSeconds === 0 && !$cycleState->cycleInProgress && !$this->isRefreshing) {
+        if (
+            $cycleState->countdownSeconds === 0 && !$cycleState->cycleInProgress && !$this->isRefreshing
+            && \App\Models\SystemConfig::isMonitoringEnabled()
+        ) {
             // Use an atomic lock to prevent multiple poll requests from spawning duplicate processes.
             $lock = \Illuminate\Support\Facades\Cache::lock('poll_cycle_trigger_lock', 120);
 
@@ -204,7 +213,7 @@ class Dashboard extends Component
         $monitoringService = app(MonitoringServiceInterface::class);
 
         // Prevent duplicate refresh if already in progress
-        if ($monitoringService->isCycleInProgress()) {
+        if ($monitoringService->isCycleInProgress() || !\App\Models\SystemConfig::isMonitoringEnabled()) {
             return;
         }
 
@@ -253,6 +262,13 @@ class Dashboard extends Component
      */
     public function refreshSite(int $siteId): void
     {
+        if (
+            !\App\Models\SystemConfig::isMonitoringEnabled()
+            || !Site::whereKey($siteId)->where('is_monitored', true)->exists()
+        ) {
+            return;
+        }
+
         $monitoringService = app(MonitoringServiceInterface::class);
 
         $this->isSiteRefreshing = true;
@@ -452,7 +468,8 @@ class Dashboard extends Component
                 'to' => $record->ended_at?->format('Y-m-d H:i:s') ?? 'Ongoing',
                 'pages' => implode(', ', $record->affected_pages),
                 'duration' => $this->formatDurationSeconds($record->getLiveDurationSeconds())
-                    . ($record->isActive() ? ' (ongoing)' : ''),
+                    . ($record->isActive() ? ' (ongoing)' : '')
+                    . ($record->wasMonitoringStopped() ? ' (monitoring stopped)' : ''),
             ];
         })->toArray();
     }
@@ -521,14 +538,19 @@ class Dashboard extends Component
     {
         $monitoringService = app(MonitoringServiceInterface::class);
 
+        $this->monitoringEnabled = \App\Models\SystemConfig::isMonitoringEnabled();
+
         // Get site counts
         $this->totalSites = Site::count();
         // $this->sitesDown = Site::where('status', SiteStatus::PartiallyDown)
         //     ->orWhere('status', SiteStatus::TotallyDown)
         //     ->count();
-        $this->sitesDown = Site::where('status', SiteStatus::TotallyDown)->count();
-        $this->sitesUp = Site::where('status', SiteStatus::Up)
-            ->orWhere('status', SiteStatus::PartiallyDown)
+        $this->sitesUnmonitored = Site::where('is_monitored', false)->count();
+        $this->sitesDown = Site::where('is_monitored', true)
+            ->where('status', SiteStatus::TotallyDown)
+            ->count();
+        $this->sitesUp = Site::where('is_monitored', true)
+            ->whereIn('status', [SiteStatus::Up, SiteStatus::PartiallyDown])
             ->count();
         // $this->sitesUp = Site::where('status', SiteStatus::Up)->count();
 
@@ -560,7 +582,7 @@ class Dashboard extends Component
 
         // Apply status filter
         if ($this->statusFilter !== '') {
-            $query->where('status', $this->statusFilter);
+            $query->where('is_monitored', true)->where('status', $this->statusFilter);
         }
 
         // Apply search filter
@@ -568,8 +590,9 @@ class Dashboard extends Component
             $query->where('name', 'like', '%' . $this->siteSearch . '%');
         }
 
-        // Sort by status priority: totally_down first, partially_down second, up third, then alphabetical
-        $query->orderByRaw("CASE status WHEN 'totally_down' THEN 0 WHEN 'partially_down' THEN 1 WHEN 'up' THEN 2 ELSE 3 END")
+        // Sort unmonitored sites last, then by status priority: totally_down first, partially_down second, up third, then alphabetical
+        $query->orderByDesc('is_monitored')
+            ->orderByRaw("CASE status WHEN 'totally_down' THEN 0 WHEN 'partially_down' THEN 1 WHEN 'up' THEN 2 ELSE 3 END")
             ->orderBy('name');
 
         return $query->paginate(24);

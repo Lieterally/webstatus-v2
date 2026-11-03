@@ -111,6 +111,8 @@
                             <option value="" {{ $status === '' ? 'selected' : '' }}>All Status</option>
                             <option value="active" {{ $status === 'active' ? 'selected' : '' }}>Active</option>
                             <option value="resolved" {{ $status === 'resolved' ? 'selected' : '' }}>Resolved</option>
+                            <option value="monitoring_stopped" {{ $status === 'monitoring_stopped' ? 'selected' : '' }}>
+                                Monitoring Stopped</option>
                         </select>
 
                         {{-- Hidden range input so site/status filter preserves range --}}
@@ -179,6 +181,8 @@
                                                 <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
                                                 Active
                                             </span>
+                                        @elseif ($event->wasMonitoringStopped())
+                                            <span class="badge badge-ghost badge-sm whitespace-nowrap">Monitoring Stopped</span>
                                         @else
                                             <span class="badge badge-ghost badge-sm">Resolved</span>
                                         @endif

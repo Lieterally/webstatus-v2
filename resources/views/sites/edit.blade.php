@@ -96,6 +96,25 @@
                     @enderror
                 </div>
 
+                <div class="form-control mb-4">
+                    <input type="hidden" name="is_monitored" value="0">
+                    <label class="label cursor-pointer justify-start gap-3" for="is_monitored">
+                        <input type="checkbox" name="is_monitored" id="is_monitored" value="1"
+                            class="toggle toggle-primary" @checked(old('is_monitored', $site->is_monitored))>
+                        <span class="label-text">Monitor this site</span>
+                    </label>
+                    <label class="label">
+                        <span class="label-text-alt text-base-content/60 whitespace-normal">When off, checking cycles
+                            skip this site and it's left out of down alerts. Changing this closes any open outage for
+                            the site.</span>
+                    </label>
+                    @error('is_monitored')
+                        <label class="label">
+                            <span class="label-text-alt text-error">{{ $message }}</span>
+                        </label>
+                    @enderror
+                </div>
+
                 <div class="form-control mb-6">
                     <label class="label">
                         <span class="label-text">Pages <span class="text-error">*</span></span>
