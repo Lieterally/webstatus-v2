@@ -155,10 +155,10 @@ This also deletes hourly stats older than a year. Daily, weekly and monthly stat
 
 After seeding:
 
-- **Super Admin**: `superadmin` / `password`
-- **Admin**: `admin` / `adminwebstatus`
+- **Super Admin**: `superadmin`
+- **Admin**: `admin`
 
-Change both passwords before exposing the site. Seeding also adds active Telegram recipients from `TelegramTargetSeeder`, so those chats receive alerts once a bot token is set. Review that list before seeding a new install.
+Their passwords are set in `database/seeders`. Change both before exposing the site. Seeding also adds active Telegram recipients from `TelegramTargetSeeder`, so those chats receive alerts once a bot token is set. Review that list before seeding a new install.
 
 ## Running Tests
 
