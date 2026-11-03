@@ -372,14 +372,14 @@ class Dashboard extends Component
             return [];
         }
 
-        // Single query: fetch the latest check result per page via MAX(id) subquery
-        $latestResults = CheckResult::whereIn('page_id', $pageIds)
-            ->whereIn('id', function ($sub) use ($pageIds) {
-                $sub->selectRaw('MAX(id)')
-                    ->from('check_results')
-                    ->whereIn('page_id', $pageIds)
-                    ->groupBy('page_id');
-            })
+        // Fetch the latest check result per page. Inlined integers let MySQL jump
+        // straight to MAX(id) per page; bound parameters make it read every row of those pages.
+        $latestIds = CheckResult::selectRaw('MAX(id) AS id')
+            ->whereIntegerInRaw('page_id', $pageIds)
+            ->groupBy('page_id')
+            ->pluck('id');
+
+        $latestResults = CheckResult::whereIn('id', $latestIds)
             ->get()
             ->keyBy('page_id');
 
@@ -878,14 +878,14 @@ class Dashboard extends Component
                     ->groupBy('site_id')
                     ->pluck('avg_ms', 'site_id');
 
-                // Batch latest HTTP codes (get the most recent check per site)
-                $latestCodes = CheckResult::whereIn('site_id', $siteIds)
-                    ->whereIn('id', function ($query) use ($siteIds) {
-                        $query->selectRaw('MAX(id)')
-                            ->from('check_results')
-                            ->whereIn('site_id', $siteIds)
-                            ->groupBy('site_id');
-                    })
+                // Batch latest HTTP codes (get the most recent check per site). Inlined integers let MySQL
+                // jump straight to MAX(id) per site; bound parameters make it read every row of those sites.
+                $latestIds = CheckResult::selectRaw('MAX(id) AS id')
+                    ->whereIntegerInRaw('site_id', $siteIds)
+                    ->groupBy('site_id')
+                    ->pluck('id');
+
+                $latestCodes = CheckResult::whereIn('id', $latestIds)
                     ->pluck('http_code', 'site_id');
 
                 $metrics = [];
