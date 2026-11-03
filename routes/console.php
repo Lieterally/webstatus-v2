@@ -41,3 +41,19 @@ Schedule::command('app:run-monitoring-cycle')
     ->withoutOverlapping()
     ->runInBackground()
     ->onOneServer();
+
+/*
+|--------------------------------------------------------------------------
+| Telescope Retention
+|--------------------------------------------------------------------------
+|
+| Telescope is a dev dependency, so its prune command only exists when the
+| package is installed.
+|
+*/
+
+if (class_exists(\Laravel\Telescope\Telescope::class)) {
+    Schedule::command('telescope:prune --hours=48')
+        ->dailyAt('03:30')
+        ->onOneServer();
+}

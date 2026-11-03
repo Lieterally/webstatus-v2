@@ -15,6 +15,7 @@ use App\Services\StatusDeterminationServiceInterface;
 use App\Services\TelegramBotService;
 use App\Services\TelegramBotServiceInterface;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Telescope\TelescopeApplicationServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -23,6 +24,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // Telescope is a dev dependency, so it is missing after composer install --no-dev
+        if (class_exists(TelescopeApplicationServiceProvider::class)) {
+            $this->app->register(TelescopeServiceProvider::class);
+        }
+
         $this->app->bind(
             StatusDeterminationServiceInterface::class,
             StatusDeterminationService::class
