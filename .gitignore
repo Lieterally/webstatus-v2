@@ -22,7 +22,12 @@
 /storage/pail
 /vendor
 /database/*.sqlite
+/graphify-out/
+/.claude/
+/CLAUDE.md
+/storage/framework/views/*.php
 _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
