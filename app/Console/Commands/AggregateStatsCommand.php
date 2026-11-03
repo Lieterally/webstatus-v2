@@ -2,6 +2,8 @@
 
 namespace App\Console\Commands;
 
+use App\Models\SystemConfig;
+use App\Services\DataRetentionService;
 use App\Services\StatsAggregationService;
 use Illuminate\Console\Command;
 
@@ -13,6 +15,14 @@ class AggregateStatsCommand extends Command
     public function handle(StatsAggregationService $service): int
     {
         if ($this->option('backfill')) {
+            // Backfill rebuilds rollups and downtime history from raw results, so anything already pruned would be lost
+            $prunedBefore = SystemConfig::getValue(DataRetentionService::PRUNED_BEFORE_KEY);
+            if ($prunedBefore !== null) {
+                $this->error("Backfill refused: raw check results before {$prunedBefore} have been pruned, and rebuilding would destroy older stats and downtime history.");
+
+                return self::FAILURE;
+            }
+
             $this->info('Starting full historical backfill from raw check_results...');
             $this->info('This may take a while depending on how much data you have.');
             $this->newLine();

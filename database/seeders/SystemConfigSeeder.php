@@ -21,6 +21,7 @@ class SystemConfigSeeder extends Seeder
             ['key' => 'connection_timeout_seconds', 'value' => '10', 'updated_at' => now()],
             ['key' => 'response_timeout_seconds', 'value' => '25', 'updated_at' => now()],
             ['key' => 'concurrency_limit', 'value' => '30', 'updated_at' => now()],
+            ['key' => 'check_results_retention_days', 'value' => '30', 'updated_at' => now()],
         ];
 
         foreach ($configs as $config) {
