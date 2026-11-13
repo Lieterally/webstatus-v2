@@ -243,8 +243,9 @@
                 document.addEventListener('DOMContentLoaded', function() {
                     const ganttData = @js($ganttData);
                     const chartHeight = Math.max(250, ganttData.length * 40 + 80);
+                    let chart = null;
 
-                    const options = {
+                    const buildOptions = () => ({
                         series: [{
                             data: ganttData
                         }],
@@ -286,7 +287,7 @@
                         },
                         grid: {
                             row: {
-                                colors: ['#f8f8f8', 'transparent'],
+                                colors: [window.itkToken('surface-sunken'), 'transparent'],
                                 opacity: 0.5,
                             },
                             xaxis: {
@@ -308,10 +309,16 @@
                         legend: {
                             show: false
                         },
+                    });
+
+                    const renderChart = () => {
+                        if (chart) { chart.destroy(); }
+                        chart = new ApexCharts(document.getElementById('ganttChart'), buildOptions());
+                        chart.render();
                     };
 
-                    const chart = new ApexCharts(document.getElementById('ganttChart'), options);
-                    chart.render();
+                    renderChart();
+                    window.addEventListener('itk-theme-change', renderChart);
                 });
             </script>
         @endpush

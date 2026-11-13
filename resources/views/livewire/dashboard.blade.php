@@ -179,11 +179,16 @@
                     <div class="bg-base-200/50 rounded-lg p-4" style="height: 280px;" wire:ignore
                         x-data="{
                             chart: null,
+                            chartData: null,
                             init() {
                                 this.createChart();
                                 Livewire.on('overviewChartsUpdated', (data) => {
                                     if (this.chart) { this.chart.destroy(); }
                                     this.createChartWithData(data[0].response);
+                                });
+                                window.addEventListener('itk-theme-change', () => {
+                                    if (this.chart) { this.chart.destroy(); }
+                                    this.createChartWithData(this.chartData);
                                 });
                             },
                             createChart() {
@@ -192,7 +197,9 @@
                             },
                             createChartWithData(chartData) {
                                 const ctx = this.$refs.overviewResponseCanvas;
-                                if (!ctx) return;
+                                if (!ctx || !chartData) return;
+                                this.chartData = chartData;
+                                const colors = window.itkChartColors();
                                 this.chart = new Chart(ctx, {
                                     type: 'line',
                                     data: {
@@ -200,8 +207,8 @@
                                         datasets: [{
                                             label: 'Avg Response Time (s)',
                                             data: chartData.data,
-                                            borderColor: '#1565C0',
-                                            backgroundColor: 'rgba(21, 101, 192, 0.1)',
+                                            borderColor: colors.primary,
+                                            backgroundColor: window.itkAlpha(colors.primary, 0.1),
                                             borderWidth: 2,
                                             fill: true,
                                             tension: 0.3,
@@ -218,7 +225,7 @@
                                             tooltip: { callbacks: { label: (c) => c.parsed.y !== null ? c.parsed.y.toFixed(3) + 's' : 'No data' } }
                                         },
                                         scales: {
-                                            y: { beginAtZero: true, title: { display: true, text: 'Seconds' }, grid: { color: 'rgba(0,0,0,0.05)' } },
+                                            y: { beginAtZero: true, title: { display: true, text: 'Seconds' }, grid: { color: colors.grid } },
                                             x: { title: { display: true, text: chartData.xLabel || 'Time' }, grid: { display: false } }
                                         }
                                     }
@@ -261,8 +268,13 @@
                     <div class="bg-base-200/50 rounded-lg p-4" style="height: 280px;" wire:ignore
                         x-data="{
                             chart: null,
+                            chartData: null,
                             init() {
                                 this.createChart();
+                                window.addEventListener('itk-theme-change', () => {
+                                    if (this.chart) { this.chart.destroy(); }
+                                    this.createChartWithData(this.chartData);
+                                });
                                 Livewire.on('overviewChartsUpdated', (data) => {
                                     if (this.chart) { this.chart.destroy(); }
                                     this.createChartWithData(data[0].downtime);
@@ -275,7 +287,9 @@
                             },
                             createChartWithData(chartData) {
                                 const ctx = this.$refs.overviewDowntimeCanvas;
-                                if (!ctx) return;
+                                if (!ctx || !chartData) return;
+                                this.chartData = chartData;
+                                const colors = window.itkChartColors();
                                 this.chart = new Chart(ctx, {
                                     type: 'bar',
                                     data: {
@@ -283,8 +297,8 @@
                                         datasets: [{
                                             label: 'Downtime (' + chartData.unit + ')',
                                             data: chartData.data,
-                                            backgroundColor: '#DC2626',
-                                            borderColor: '#DC2626',
+                                            backgroundColor: colors.danger,
+                                            borderColor: colors.danger,
                                             borderWidth: 1,
                                             borderRadius: 2,
                                         }]
@@ -307,7 +321,7 @@
                                             }
                                         },
                                         scales: {
-                                            y: { beginAtZero: true, ...(chartData.yMax ? { max: chartData.yMax } : {}), title: { display: true, text: chartData.yLabel }, grid: { color: 'rgba(0,0,0,0.05)' } },
+                                            y: { beginAtZero: true, ...(chartData.yMax ? { max: chartData.yMax } : {}), title: { display: true, text: chartData.yLabel }, grid: { color: colors.grid } },
                                             x: { title: { display: true, text: chartData.xLabel || 'Time' }, grid: { display: false } }
                                         }
                                     }
@@ -328,6 +342,8 @@
             wire:key="site-detail-{{ $selectedSiteId }}" x-data="{
                 responseChart: null,
                 downtimeChart: null,
+                responseData: null,
+                downtimeData: null,
                 chartsInitialized: false,
             
                 initCharts() {
@@ -338,6 +354,11 @@
                         this.createDowntimeChart();
                     });
             
+                    window.addEventListener('itk-theme-change', () => {
+                        if (this.responseData) { this.createResponseChartWithData(this.responseData); }
+                        if (this.downtimeData) { this.createDowntimeChartWithData(this.downtimeData); }
+                    });
+
                     Livewire.on('siteChartsUpdated', (data) => {
                         const payload = data[0];
                         if (payload.responseTimeData) {
@@ -369,6 +390,8 @@
                 createResponseChartWithData(chartData) {
                     const ctx = this.$refs.responseTimeCanvas;
                     if (!ctx) return;
+                    this.responseData = chartData;
+                    const colors = window.itkChartColors();
                     if (this.responseChart) { this.responseChart.destroy(); }
             
                     this.responseChart = new Chart(ctx, {
@@ -378,8 +401,8 @@
                             datasets: [{
                                 label: 'Response Time (seconds)',
                                 data: chartData.data,
-                                borderColor: '#1565C0',
-                                backgroundColor: 'rgba(21, 101, 192, 0.1)',
+                                borderColor: colors.primary,
+                                backgroundColor: window.itkAlpha(colors.primary, 0.1),
                                 borderWidth: 2,
                                 fill: true,
                                 tension: 0.3,
@@ -403,7 +426,7 @@
                                 y: {
                                     beginAtZero: true,
                                     title: { display: true, text: 'Seconds' },
-                                    grid: { color: 'rgba(0,0,0,0.05)' }
+                                    grid: { color: colors.grid }
                                 },
                                 x: {
                                     title: { display: true, text: chartData.xLabel || 'Time' },
@@ -422,6 +445,8 @@
                 createDowntimeChartWithData(chartData) {
                     const ctx = this.$refs.downtimeCanvas;
                     if (!ctx) return;
+                    this.downtimeData = chartData;
+                    const colors = window.itkChartColors();
                     if (this.downtimeChart) { this.downtimeChart.destroy(); }
             
                     this.downtimeChart = new Chart(ctx, {
@@ -431,8 +456,8 @@
                             datasets: [{
                                 label: 'Downtime (' + chartData.unit + ')',
                                 data: chartData.data,
-                                backgroundColor: '#DC2626',
-                                borderColor: '#DC2626',
+                                backgroundColor: colors.danger,
+                                borderColor: colors.danger,
                                 borderWidth: 1,
                                 borderRadius: 2,
                             }]
@@ -453,7 +478,7 @@
                                     beginAtZero: true,
                                     ...(chartData.yMax ? { max: chartData.yMax } : {}),
                                     title: { display: true, text: chartData.yLabel },
-                                    grid: { color: 'rgba(0,0,0,0.05)' }
+                                    grid: { color: colors.grid }
                                 },
                                 x: {
                                     title: { display: true, text: chartData.xLabel || 'Time' },
