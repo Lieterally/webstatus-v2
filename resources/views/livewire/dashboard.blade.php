@@ -117,11 +117,11 @@
                             init() {
                                 this.createChart();
                                 Livewire.on('overviewChartsUpdated', (data) => {
-                                    if (this.chart) { this.chart.destroy(); }
+                                    if (this.chart) { Alpine.raw(this.chart).destroy(); }
                                     this.createChartWithData(data[0].response);
                                 });
                                 window.addEventListener('itk-theme-change', () => {
-                                    if (this.chart) { this.chart.destroy(); }
+                                    if (this.chart) { Alpine.raw(this.chart).destroy(); }
                                     this.createChartWithData(this.chartData);
                                 });
                             },
@@ -195,11 +195,11 @@
                             init() {
                                 this.createChart();
                                 window.addEventListener('itk-theme-change', () => {
-                                    if (this.chart) { this.chart.destroy(); }
+                                    if (this.chart) { Alpine.raw(this.chart).destroy(); }
                                     this.createChartWithData(this.chartData);
                                 });
                                 Livewire.on('overviewChartsUpdated', (data) => {
-                                    if (this.chart) { this.chart.destroy(); }
+                                    if (this.chart) { Alpine.raw(this.chart).destroy(); }
                                     this.createChartWithData(data[0].downtime);
                                     document.getElementById('downtimeTotalBadge').textContent = 'Total: ' + data[0].downtime.totalHours;
                                 });
@@ -293,12 +293,12 @@
                 },
             
                 updateResponseChart(chartData) {
-                    if (this.responseChart) { this.responseChart.destroy(); }
+                    if (this.responseChart) { Alpine.raw(this.responseChart).destroy(); }
                     this.createResponseChartWithData(chartData);
                 },
             
                 updateDowntimeChart(chartData) {
-                    if (this.downtimeChart) { this.downtimeChart.destroy(); }
+                    if (this.downtimeChart) { Alpine.raw(this.downtimeChart).destroy(); }
                     this.createDowntimeChartWithData(chartData);
                     const badge = document.getElementById('siteDowntimeTotalBadge');
                     if (badge) badge.textContent = 'Total: ' + chartData.totalHours;
@@ -314,7 +314,7 @@
                     if (!ctx) return;
                     this.responseData = chartData;
                     const colors = window.itkChartColors();
-                    if (this.responseChart) { this.responseChart.destroy(); }
+                    if (this.responseChart) { Alpine.raw(this.responseChart).destroy(); }
             
                     this.responseChart = new Chart(ctx, {
                         type: 'line',
@@ -369,7 +369,7 @@
                     if (!ctx) return;
                     this.downtimeData = chartData;
                     const colors = window.itkChartColors();
-                    if (this.downtimeChart) { this.downtimeChart.destroy(); }
+                    if (this.downtimeChart) { Alpine.raw(this.downtimeChart).destroy(); }
             
                     this.downtimeChart = new Chart(ctx, {
                         type: 'bar',
@@ -413,11 +413,11 @@
             
                 destroyCharts() {
                     if (this.responseChart) {
-                        this.responseChart.destroy();
+                        Alpine.raw(this.responseChart).destroy();
                         this.responseChart = null;
                     }
                     if (this.downtimeChart) {
-                        this.downtimeChart.destroy();
+                        Alpine.raw(this.downtimeChart).destroy();
                         this.downtimeChart = null;
                     }
                 }
