@@ -126,13 +126,13 @@
         </x-itk.select>
 
         <x-itk.select name="monitoring" aria-label="Filter by monitoring" class="w-full sm:w-auto" x-on:change="refresh()">
-            <option value="">Monitored or not</option>
+            <option value="">Monitoring status</option>
             <option value="monitored" @selected(request('monitoring') === 'monitored')>Monitored</option>
             <option value="not_monitored" @selected(request('monitoring') === 'not_monitored')>Not monitored</option>
         </x-itk.select>
 
         <x-itk.select name="visibility" aria-label="Filter by public status page" class="w-full sm:w-auto" x-on:change="refresh()">
-            <option value="">Public or private</option>
+            <option value="">Visibility status</option>
             <option value="public" @selected(request('visibility') === 'public')>Public</option>
             <option value="private" @selected(request('visibility') === 'private')>Private</option>
         </x-itk.select>
