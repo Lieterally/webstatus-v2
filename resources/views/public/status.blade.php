@@ -26,12 +26,12 @@
 
 @section('content')
     <div x-data="{
-            generated: @js($now),
+            version: @js($status['version']),
             changed: false,
             async poll() {
                 try {
                     const r = await fetch(@js(route('status.json')), { headers: { Accept: 'application/json' } });
-                    if (r.ok && (await r.json()).generated_at !== this.generated) this.changed = true;
+                    if (r.ok && (await r.json()).version !== this.version) this.changed = true;
                 } catch (e) {}
             },
         }"

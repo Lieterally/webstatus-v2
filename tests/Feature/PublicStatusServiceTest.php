@@ -264,3 +264,38 @@ describe('page and json', function () {
         expect($response->headers->get('Cache-Control'))->toContain('max-age=60');
     });
 });
+
+describe('version', function () {
+    beforeEach(function () {
+        $this->site = Site::factory()->totallyDown()->create(['is_public' => true]);
+        DailyStat::create([
+            'site_id' => $this->site->id, 'period_start' => '2026-11-13', 'downtime_seconds' => 600,
+            'checks_count' => 10, 'avg_response_time_ms' => 0,
+        ]);
+        DowntimeHistory::create(['site_id' => $this->site->id, 'started_at' => now()->subMinutes(20), 'status' => 'active']);
+    });
+
+    it('stays the same when only the clock moves (rebuilt cache, ongoing outage, today\'s uptime)', function () {
+        $first = publicSnapshot();
+        $this->travel(4)->minutes();
+        $second = publicSnapshot();
+
+        expect($second['generated_at'])->not->toBe($first['generated_at'])
+            ->and($second['incidents'][0]['duration_seconds'])->toBeGreaterThan($first['incidents'][0]['duration_seconds'])
+            ->and($second['version'])->toBe($first['version']);
+    });
+
+    it('changes when a site status changes', function () {
+        $before = publicSnapshot()['version'];
+        $this->site->update(['status' => \App\Enums\SiteStatus::Up]);
+
+        expect(publicSnapshot()['version'])->not->toBe($before);
+    });
+
+    it('changes when a new cycle completes', function () {
+        $before = publicSnapshot()['version'];
+        setPublicConfig('last_cycle_completed_at', now()->format('Y-m-d H:i:s'));
+
+        expect(publicSnapshot()['version'])->not->toBe($before);
+    });
+});

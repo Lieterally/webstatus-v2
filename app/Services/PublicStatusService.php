@@ -88,13 +88,17 @@ class PublicStatusService
             ->values()
             ->all();
 
+        $state = $this->overallState($siteRows, $monitoringEnabled, $stale);
+        $incidents = $this->incidents($sites, $now);
+
         return [
             // Dates are ISO 8601 strings: the cache only unserialises plain values
             'generated_at' => $now->toIso8601String(),
+            'version' => $this->version($lastChecked, $monitoringEnabled, $state, $siteRows, $incidents),
             'last_checked_at' => $lastChecked?->toIso8601String(),
             'interval_minutes' => $intervalMinutes,
             'monitoring_enabled' => $monitoringEnabled,
-            'state' => $this->overallState($siteRows, $monitoringEnabled, $stale),
+            'state' => $state,
             'counts' => [
                 'sites' => $siteRows->count(),
                 'down' => $siteRows->where('status', 'totally_down')->count(),
@@ -102,7 +106,7 @@ class PublicStatusService
             ],
             'history_days' => self::HISTORY_DAYS,
             'categories' => $categories,
-            'incidents' => $this->incidents($sites, $now),
+            'incidents' => $incidents,
         ];
     }
 
@@ -150,6 +154,23 @@ class PublicStatusService
             'uptime' => $totalObserved > 0 ? round(100 * (1 - $totalDown / $totalObserved), 2) : null,
             'days' => $days,
         ];
+    }
+
+    /**
+     * Changes only when something a visitor would notice changes: a new check, monitoring on/off,
+     * the overall state, a site's name or status, or an incident starting or ending. It leaves out
+     * values that drift with the clock (build time, today's uptime %, ongoing durations), so the
+     * page's "status has been updated" notice doesn't fire on every cache rebuild.
+     */
+    private function version(?CarbonImmutable $lastChecked, bool $monitoringEnabled, string $state, Collection $siteRows, array $incidents): string
+    {
+        return md5(json_encode([
+            $lastChecked?->toIso8601String(),
+            $monitoringEnabled,
+            $state,
+            $siteRows->map(fn ($r) => [$r['id'], $r['name'], $r['category'], $r['status']])->values()->all(),
+            array_map(fn ($i) => [$i['site'], $i['state'], $i['started_at'], $i['ended_at']], $incidents),
+        ]));
     }
 
     /** "45 s", "11 min", "2 h 5 min", "3 d 4 h" */
