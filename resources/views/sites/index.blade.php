@@ -13,6 +13,46 @@
             get countLabel() { return this.selected.length + (this.selected.length === 1 ? ' website' : ' websites') },
             toggleAll(on) { this.selected = on ? [...this.pageIds] : [] },
             run(action) { if (!this.selected.length) return; $refs.bulkAction.value = action; $refs.bulkForm.submit() },
+
+            // Filters update the list in place: fetch the filtered page, swap #sites-results, update the URL.
+            filtering: false,
+            hasFilters: @js((bool) (request('search') || request('category') || request('person'))),
+            statusText: '',
+            requestId: 0,
+            async refresh() {
+                const form = $refs.filters;
+                const params = new URLSearchParams(new FormData(form));
+                for (const [key, value] of [...params]) if (value === '') params.delete(key);
+                this.hasFilters = ['search', 'category', 'person'].some((key) => params.get(key));
+                const url = form.getAttribute('action') + (params.toString() ? '?' + params : '');
+                const id = ++this.requestId;
+                this.filtering = true;
+                try {
+                    const response = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'text/html' } });
+                    const html = await response.text();
+                    if (id !== this.requestId) return; // a newer search is on its way
+                    const fresh = new DOMParser().parseFromString(html, 'text/html').getElementById('sites-results');
+                    if (!response.ok || !fresh) { window.location.assign(url); return; }
+                    this.selected = [];
+                    this.pageIds = JSON.parse(fresh.dataset.pageIds || '[]');
+                    document.getElementById('sites-results').innerHTML = fresh.innerHTML;
+                    history.replaceState(null, '', url);
+                    this.statusText = fresh.querySelector('[data-results-count]')?.textContent.replace(/\s+/g, ' ').trim()
+                        || 'No websites match these filters';
+                } catch (e) {
+                    window.location.assign(url);
+                } finally {
+                    if (id === this.requestId) this.filtering = false;
+                }
+            },
+            clearFilters() {
+                const form = $refs.filters;
+                form.querySelector('[name=search]').value = '';
+                form.querySelector('[name=category]').value = '';
+                form.querySelector('[name=person]').value = '';
+                this.refresh();
+                form.querySelector('[name=search]').focus();
+            },
         }">
     <x-itk.page-header title="Website manager" description="Manage monitored websites and their pages.">
         <x-slot:actions>
@@ -57,36 +97,41 @@
 
     {{-- Search and filters --}}
     <form method="GET" action="{{ route('sites.index') }}" role="search" aria-label="Filter websites"
-        class="flex flex-wrap items-center gap-3 mb-4">
+        x-ref="filters" x-on:submit.prevent="refresh()" class="flex flex-wrap items-center gap-3 mb-4">
         @if ($showAll)
             <input type="hidden" name="show" value="all">
         @endif
         <div class="relative w-full sm:w-64">
             <x-itk.icon name="search" class="pointer-events-none absolute left-3 top-3 text-ink-muted" />
             <x-itk.input type="search" name="search" :value="request('search')" aria-label="Search by website name"
-                placeholder="Search by name" class="pl-10" />
+                placeholder="Search by name" class="pl-10 pr-10" x-on:input.debounce.400ms="refresh()" />
+            <x-itk.spinner x-bind:style="filtering ? '' : 'display: none'" style="display: none" label="Updating results" class="absolute right-3 top-3.5 text-ink-muted" />
         </div>
 
-        <x-itk.select name="category" aria-label="Filter by category" class="w-full sm:w-auto">
+        <x-itk.select name="category" aria-label="Filter by category" class="w-full sm:w-auto" x-on:change="refresh()">
             <option value="">All categories</option>
             @foreach ($categories as $category)
                 <option value="{{ $category->id }}" @selected(request('category') == $category->id)>{{ $category->name }}</option>
             @endforeach
         </x-itk.select>
 
-        <x-itk.select name="person" aria-label="Filter by responsible person" class="w-full sm:w-auto">
+        <x-itk.select name="person" aria-label="Filter by responsible person" class="w-full sm:w-auto" x-on:change="refresh()">
             <option value="">All responsible people</option>
             @foreach ($staffMembers as $staff)
                 <option value="{{ $staff->id }}" @selected(request('person') == $staff->id)>{{ $staff->name }}</option>
             @endforeach
         </x-itk.select>
 
-        <x-itk.button type="submit" variant="secondary" icon="list-filter">Apply filters</x-itk.button>
+        {{-- Filters apply as you type or choose; the button is only needed without JavaScript --}}
+        <noscript><x-itk.button type="submit" variant="secondary" icon="list-filter">Apply filters</x-itk.button></noscript>
 
-        @if (request('search') || request('category') || request('person'))
-            <x-itk.button variant="ghost" :href="route('sites.index', $showAll ? ['show' => 'all'] : [])" icon="x">Clear filters</x-itk.button>
-        @endif
+        {{-- Shown with a style binding, not x-show: x-show shows a frame late, so a quick show-then-hide can stick --}}
+        <x-itk.button variant="ghost" icon="x" x-on:click="clearFilters()"
+            x-bind:style="hasFilters ? '' : 'display: none'" :style="request('search') || request('category') || request('person') ? null : 'display: none'">Clear filters</x-itk.button>
     </form>
+
+    {{-- Announces the new result count after a filter change --}}
+    <p class="sr-only" aria-live="polite" x-text="statusText"></p>
 
         @if ($errors->has('ids') || $errors->has('ids.*') || $errors->has('action'))
             <x-itk.alert tone="danger" class="mb-4">
@@ -102,12 +147,13 @@
             </template>
         </form>
 
+        <div id="sites-results" data-page-ids="{{ json_encode($sites->pluck('id')) }}" x-bind:aria-busy="filtering.toString()">
         @if ($sites->isEmpty())
             <x-itk.card>
                 @if (request('search') || request('category') || request('person'))
                     <x-itk.empty title="No websites match these filters" icon="search">
                         <x-slot:action>
-                            <x-itk.button variant="secondary" :href="route('sites.index')">Clear filters</x-itk.button>
+                            <x-itk.button variant="secondary" x-on:click="clearFilters()">Clear filters</x-itk.button>
                         </x-slot:action>
                         Try another name, category or responsible person.
                     </x-itk.empty>
@@ -196,7 +242,7 @@
         @if ($sites->total() > 0)
             @php $total = $sites->total(); $noun = \Illuminate\Support\Str::plural('website', $total); @endphp
             <div class="flex flex-wrap items-center justify-between gap-3 mt-4">
-                <p class="text-footnote text-ink-muted tabular-nums">
+                <p class="text-footnote text-ink-muted tabular-nums" data-results-count>
                     @if ($showAll || ! $sites->hasPages())
                         Showing all {{ $total }} {{ $noun }}
                     @else
@@ -220,6 +266,7 @@
                 {{ $sites->links('vendor.pagination.daisy') }}
             </div>
         @endif
+        </div>
 
         <x-itk.alert-dialog ref="bulkDialog" action="{{ Js::from(route('sites.bulk')) }}" method="POST"
             confirm-label="Delete websites" id="bulk-delete-sites">
