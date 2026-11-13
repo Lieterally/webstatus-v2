@@ -133,6 +133,9 @@ class MonitoringService implements MonitoringServiceInterface
             // 7. Update all rollup stats (hourly, daily, weekly, monthly)
             app(StatsAggregationService::class)->updateAllCurrentStats();
 
+            // 8. The public status page shows the new results straight away
+            PublicStatusService::forget();
+
             return new CycleResult(
                 cycleId: $cycle->id,
                 sitesChecked: $sites->count(),
@@ -191,6 +194,8 @@ class MonitoringService implements MonitoringServiceInterface
         if ($newStatus !== SiteStatus::Up) {
             $cycle->update(['sites_down' => 1]);
         }
+
+        PublicStatusService::forget();
 
         return $siteResult;
     }
