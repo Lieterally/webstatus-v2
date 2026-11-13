@@ -72,6 +72,9 @@ Route::middleware(['auth', 'role:admin'])->group(function () {
 
     // Website Manager - accessible by both Admin and Super_Admin
     Route::post('/sites/bulk', [SiteController::class, 'bulk'])->name('sites.bulk');
+    Route::post('/sites/discover-pages', [SiteController::class, 'discoverPages'])
+        ->middleware('throttle:10,1')
+        ->name('sites.discover');
     Route::resource('sites', SiteController::class)->except(['show']);
 
     // Category Manager - accessible by both Admin and Super_Admin

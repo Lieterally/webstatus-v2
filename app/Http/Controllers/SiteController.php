@@ -9,10 +9,13 @@ use App\Models\ITStaff;
 use App\Models\Page;
 use App\Models\Site;
 use App\Services\MonitoringServiceInterface;
+use App\Services\PageDiscovery;
 use App\Services\PublicStatusService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
@@ -197,6 +200,31 @@ class SiteController extends Controller
         PublicStatusService::forget();
 
         return back()->with('success', ucfirst($message));
+    }
+
+    /**
+     * Suggest a website's main pages from its menu (or sitemap) for the site form.
+     * Adding pages by hand still works; nothing is saved here.
+     */
+    public function discoverPages(Request $request, PageDiscovery $discovery): JsonResponse
+    {
+        // Validated by hand: this app only renders exceptions as JSON for api/* routes,
+        // and the form's fetch() needs a JSON answer either way.
+        $validator = Validator::make($request->all(), [
+            'base_url' => ['required', 'string', 'max:255', 'url:http,https'],
+        ], [
+            'base_url.required' => 'Enter the base URL first, then suggest pages.',
+            'base_url.url' => 'Enter a base URL that starts with http:// or https://.',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => $validator->errors()->first('base_url'),
+                'errors' => $validator->errors()->toArray(),
+            ], 422);
+        }
+
+        return response()->json($discovery->discover($validator->validated()['base_url']));
     }
 
     public function destroy(Site $site): RedirectResponse

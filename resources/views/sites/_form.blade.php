@@ -101,10 +101,60 @@
         </ul>
     @endif
 
-    <div>
+    <div class="flex flex-wrap gap-2">
         <x-itk.button variant="secondary" icon="plus" x-show="pages.length < 50" x-on:click="addPage()">
             Add page
         </x-itk.button>
+        <x-itk.button variant="secondary" x-on:click="suggest()" x-bind:disabled="discovering" aria-describedby="suggest-hint">
+            <x-itk.icon name="wand-sparkles" x-bind:style="discovering ? 'display: none' : ''" />
+            <x-itk.spinner size="20" label="Finding pages" style="display: none" x-bind:style="discovering ? '' : 'display: none'" />
+            <span x-text="discovering ? 'Finding pages…' : 'Suggest main pages'">Suggest main pages</span>
+        </x-itk.button>
+    </div>
+    <p id="suggest-hint" class="text-footnote text-ink-muted">
+        Reads the website's menu (or its sitemap) at the base URL above. You choose which pages to add.
+    </p>
+
+    <p class="sr-only" aria-live="polite" x-text="announcement"></p>
+
+    <div role="alert" style="display: none" x-bind:style="discoverError ? '' : 'display: none'">
+        <x-itk.alert tone="warning"><span x-text="discoverError"></span></x-itk.alert>
+    </div>
+
+    {{-- Suggestions: grouped by section, the homepage and one page per section ticked --}}
+    <div role="region" aria-labelledby="suggest-title" style="display: none" x-bind:style="discovery ? '' : 'display: none'"
+        class="grid gap-4 p-4 rounded-md border border-line bg-surface-sunken">
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 id="suggest-title" x-ref="suggestTitle" tabindex="-1" class="text-headline text-ink focus:outline-none">Suggested pages</h3>
+            <span class="text-footnote text-ink-muted" x-text="discovery && discovery.source === 'sitemap' ? 'Found in the sitemap' : 'Found in the website menu'"></span>
+        </div>
+        <p class="text-footnote text-ink-muted" style="display: none" x-bind:style="discovery && discovery.message ? '' : 'display: none'"
+            x-text="discovery ? discovery.message : ''"></p>
+
+        <template x-for="group in groups" :key="group.section">
+            <fieldset class="grid">
+                <legend class="text-label uppercase text-ink-muted mb-1" x-text="group.section"></legend>
+                <template x-for="page in group.pages" :key="page.path">
+                    <label class="flex items-center gap-3 min-h-11 cursor-pointer">
+                        <input type="checkbox" class="size-5 shrink-0 accent-primary cursor-pointer" x-bind:value="page.path"
+                            x-model="picked" x-bind:disabled="pages.includes(page.path)">
+                        <span class="min-w-0">
+                            <span class="block text-callout text-ink truncate" x-text="page.label"></span>
+                            <span class="block text-footnote text-ink-muted truncate">
+                                <span x-text="page.path"></span><span x-show="pages.includes(page.path)"> · Already added</span>
+                            </span>
+                        </span>
+                    </label>
+                </template>
+            </fieldset>
+        </template>
+
+        <div class="flex flex-wrap items-center gap-2 pt-3 border-t border-line">
+            <x-itk.button icon="plus" x-on:click="addPicked()" x-bind:disabled="!picked.length">
+                <span x-text="picked.length === 1 ? 'Add 1 page' : 'Add ' + picked.length + ' pages'">Add pages</span>
+            </x-itk.button>
+            <x-itk.button variant="ghost" x-on:click="discovery = null; picked = []">Cancel</x-itk.button>
+        </div>
     </div>
 </fieldset>
 
@@ -126,7 +176,77 @@
                     if (this.pages.length > 1) {
                         this.pages.splice(index, 1);
                     }
-                }
+                },
+
+                // "Suggest main pages": ask the server to read the website's menu or sitemap
+                discovering: false,
+                discovery: null,
+                picked: [],
+                discoverError: '',
+                announcement: '',
+                get groups() {
+                    if (!this.discovery) return [];
+                    const groups = [];
+                    for (const page of this.discovery.pages) {
+                        let group = groups.find((g) => g.section === page.section);
+                        if (!group) groups.push(group = { section: page.section, pages: [] });
+                        group.pages.push(page);
+                    }
+                    return groups;
+                },
+                async suggest() {
+                    const field = document.getElementById('base_url');
+                    const baseUrl = (field?.value || '').trim();
+                    this.discoverError = '';
+                    this.discovery = null;
+                    this.announcement = '';
+                    if (!baseUrl) {
+                        this.discoverError = 'Enter the base URL first, then suggest pages.';
+                        field?.focus();
+                        return;
+                    }
+                    this.discovering = true;
+                    try {
+                        const response = await fetch(@js(route('sites.discover')), {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                Accept: 'application/json',
+                                'X-Requested-With': 'XMLHttpRequest',
+                                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                            },
+                            body: JSON.stringify({ base_url: baseUrl }),
+                        });
+                        const data = await response.json().catch(() => ({}));
+                        if (response.status === 429) {
+                            this.discoverError = 'Too many suggestions in a row. Wait a minute, then try again.';
+                        } else if (!response.ok) {
+                            this.discoverError = data.message || 'Something went wrong. Try again, or add pages by hand.';
+                        } else if (!data.pages || !data.pages.length) {
+                            this.discoverError = data.message || 'No pages were found. Add pages by hand.';
+                        } else {
+                            this.discovery = data;
+                            this.picked = data.suggested.filter((path) => !this.pages.includes(path));
+                            this.announcement = data.pages.length + ' pages found.';
+                            this.$nextTick(() => this.$refs.suggestTitle.focus());
+                        }
+                    } catch (e) {
+                        this.discoverError = "Couldn't reach the server. Check your connection and try again.";
+                    } finally {
+                        this.discovering = false;
+                    }
+                },
+                addPicked() {
+                    const room = 50 - this.pages.length;
+                    const toAdd = this.picked.filter((path) => !this.pages.includes(path)).slice(0, room);
+                    this.pages.push(...toAdd);
+                    const skipped = this.picked.length - toAdd.length;
+                    this.announcement = 'Added ' + toAdd.length + (toAdd.length === 1 ? ' page.' : ' pages.')
+                        + (skipped > 0 ? ' ' + skipped + ' not added: a website can have at most 50 pages.' : '');
+                    this.discoverError = skipped > 0 ? this.announcement : '';
+                    this.discovery = null;
+                    this.picked = [];
+                },
             };
         }
     </script>
