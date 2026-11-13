@@ -1,18 +1,18 @@
 @extends('layouts.public')
 
-@section('title', 'Service status')
+@section('title', 'Website status')
 
 @use('App\Services\PublicStatusService', 'PS')
 
 @php
     $now = $status['generated_at'];
     $banner = [
-        'operational' => ['success', 'All services are operational', null],
-        'degraded' => ['warning', 'Some services are partially down', 'Some pages of these websites are not loading. The rest of each website works.'],
-        'down' => ['danger', 'Some services are down', 'These websites cannot be reached right now. IT staff are notified automatically.'],
+        'operational' => ['success', 'All websites are operational', null],
+        'degraded' => ['warning', 'Some websites are partially down', 'Some pages of these websites are not loading. The rest of each website works.'],
+        'down' => ['danger', 'Some websites are down', 'These websites cannot be reached right now. IT staff are notified automatically.'],
         'paused' => ['info', 'Monitoring is paused', 'Automatic checks are switched off, so the statuses below are unknown.'],
         'stale' => ['warning', 'Status may be out of date', 'The last check is older than expected, so the statuses below are unknown.'],
-        'empty' => ['info', 'No services are listed yet', null],
+        'empty' => ['info', 'No websites are listed yet', null],
     ][$status['state']];
     $lastChecked = $status['last_checked_at']
         ? 'Last checked ' . PS::formatTime($status['last_checked_at'], $now)
@@ -37,7 +37,7 @@
         }"
         x-init="setInterval(() => { if (!document.hidden && !changed) poll() }, 60000)">
 
-        <h1 class="text-title-1 text-ink mb-4">ITK service status</h1>
+        <h1 class="text-title-1 text-ink mb-4">ITK website status</h1>
 
         {{-- New data notice: the page never reloads by itself, so nothing moves while someone reads --}}
         <div role="status" class="mb-4" x-show="changed" x-cloak>
@@ -60,11 +60,11 @@
             <span>Checked every {{ $interval }} minutes</span>
         </p>
 
-        {{-- Services by category --}}
+        {{-- Websites by category --}}
         @if (count($status['categories']) > 0)
-            <section aria-labelledby="services-heading" class="mb-10">
+            <section aria-labelledby="websites-heading" class="mb-10">
                 <div class="flex flex-wrap items-end justify-between gap-3 mb-3">
-                    <h2 id="services-heading" class="text-title-2 text-ink">Services</h2>
+                    <h2 id="websites-heading" class="text-title-2 text-ink">Websites</h2>
                     <p class="text-footnote text-ink-muted">
                         <span class="max-sm:hidden">Uptime over the last {{ $status['history_days'] }} days</span>
                         <span class="sm:hidden">Uptime over the last 30 days</span>
@@ -79,7 +79,7 @@
                                 <span class="flex flex-wrap items-center gap-3">
                                     <span class="text-title-3 text-ink">{{ $category['name'] }}</span>
                                     <span class="text-footnote text-ink-muted">
-                                        {{ count($category['sites']) }} {{ \Illuminate\Support\Str::plural('service', count($category['sites'])) }}
+                                        {{ count($category['sites']) }} {{ \Illuminate\Support\Str::plural('website', count($category['sites'])) }}
                                     </span>
                                 </span>
                             </x-slot:trigger>

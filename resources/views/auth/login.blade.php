@@ -57,7 +57,7 @@
         <p class="text-center mt-5">
             <a href="{{ route('status') }}"
                 class="inline-flex items-center gap-1.5 min-h-11 text-callout text-link hover:underline underline-offset-3 rounded-xs">
-                <x-itk.icon name="radio-tower" size="16" />View service status
+                <x-itk.icon name="radio-tower" size="16" />View website status
             </a>
         </p>
 

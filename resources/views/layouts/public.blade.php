@@ -13,7 +13,7 @@
     </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>@yield('title', 'Service status') - Institut Teknologi Kalimantan</title>
+    <title>@yield('title', 'Website status') - Institut Teknologi Kalimantan</title>
     <meta name="description" content="@yield('description', 'Live status and uptime of Institut Teknologi Kalimantan websites.')">
     <link rel="icon" type="image/png" href="{{ asset('images/brand/lambang-itk.png') }}">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -25,7 +25,7 @@
         Skip to content
     </a>
 
-    <x-itk.site-header title="Service status" :href="route('status')">
+    <x-itk.site-header title="Website status" :href="route('status')">
         <x-itk.theme-toggle />
         @auth
             <x-itk.button variant="secondary" size="sm" :href="route('dashboard')" icon="layout-dashboard"

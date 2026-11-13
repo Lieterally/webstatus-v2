@@ -56,7 +56,7 @@
     <div>
         <x-itk.checkbox name="is_public" label="Show on the public status page" unchecked="0"
             :checked="(bool) old('is_public', $site?->is_public ?? false)" x-on:change="isPublic = $event.target.checked"
-            description="Anyone can see this website's status, uptime and outages without logging in. Leave it off for internal or sensitive services." />
+            description="Anyone can see this website's status, uptime and outages without logging in. Leave it off for internal or sensitive websites." />
         @error('is_public')
             <p class="flex items-start gap-1 text-footnote font-medium text-error mt-1">
                 <x-itk.icon name="circle-alert" size="16" class="mt-px" />{{ $message }}

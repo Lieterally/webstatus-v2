@@ -252,8 +252,8 @@ describe('page and json', function () {
     it('shows the public page twice in a row, the second time from the cache', function () {
         Site::factory()->totallyDown()->create(['is_public' => true, 'name' => 'Portal']);
 
-        $this->get('/')->assertOk()->assertSee('Some services are down')->assertSee('Portal');
-        $this->get('/')->assertOk()->assertSee('Some services are down');
+        $this->get('/')->assertOk()->assertSee('Some websites are down')->assertSee('Portal');
+        $this->get('/')->assertOk()->assertSee('Some websites are down');
     });
 
     it('serves status.json with a cache header', function () {
