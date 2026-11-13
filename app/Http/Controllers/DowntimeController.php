@@ -118,7 +118,7 @@ class DowntimeController extends Controller
                     $barStart->getTimestampMs(),
                     $barEnd->getTimestampMs(),
                 ],
-                'fillColor' => $event->isActive() ? '#DC2626' : '#F87171',
+                'state' => $event->isActive() ? 'active' : 'resolved',
             ];
         }
 

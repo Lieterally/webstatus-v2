@@ -4,8 +4,23 @@
     (the label becomes aria-label). model: the Livewire property each option sets with wire:click.
     Arrow keys move and select, as in a radio group. Every option is 44px.
 --}}
-@props(['label', 'options' => [], 'value' => null, 'model'])
+@props(['label', 'options' => [], 'value' => null, 'model' => null, 'hrefs' => null])
 
+@if ($hrefs)
+    {{-- Link mode: each option loads a page (hrefs: [value => url]); the current one has aria-current. --}}
+    <nav aria-label="{{ $label }}"
+        {{ $attributes->class('inline-flex max-w-full overflow-x-auto gap-0.5 p-1 rounded-md bg-surface-sunken border border-line') }}>
+        @foreach ($options as $optionValue => $option)
+            @php $current = (string) $optionValue === (string) $value; @endphp
+            <a href="{{ $hrefs[$optionValue] }}" @if ($current) aria-current="true" @endif
+                @class([
+                    'inline-flex shrink-0 items-center justify-center min-h-11 min-w-11 px-3 rounded-sm border text-callout no-underline',
+                    'bg-surface text-ink font-semibold border-line-strong shadow-1' => $current,
+                    'bg-transparent text-ink-muted border-transparent hover:text-ink' => ! $current,
+                ])>{{ $option }}</a>
+        @endforeach
+    </nav>
+@else
 <div role="radiogroup" aria-label="{{ $label }}"
     x-data="{
         move(step) {
@@ -42,3 +57,4 @@
         </button>
     @endforeach
 </div>
+@endif
