@@ -15,6 +15,27 @@
                 @csrf
                 @method('PUT')
 
+                {{-- Global Monitoring Toggle --}}
+                <div class="form-control mb-6">
+                    <input type="hidden" name="is_monitoring" value="0">
+                    <label class="label cursor-pointer justify-start gap-3" for="is_monitoring">
+                        <input type="checkbox" name="is_monitoring" id="is_monitoring" value="1"
+                            class="toggle toggle-primary" @checked(old('is_monitoring', $isMonitoring))>
+                        <span class="label-text">Run monitoring cycles</span>
+                    </label>
+
+                    <p class="text-sm text-base-content/70">
+                        When off, no site is checked and no down alerts are sent. Turning this off closes all open
+                        outages.
+                    </p>
+
+                    @error('is_monitoring')
+                        <label class="label">
+                            <span class="label-text-alt text-error">{{ $message }}</span>
+                        </label>
+                    @enderror
+                </div>
+
                 {{-- Cycle Interval --}}
                 <div class="form-control mb-6">
                     <label class="label" for="cycle_interval_minutes">

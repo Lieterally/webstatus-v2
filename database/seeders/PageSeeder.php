@@ -26,6 +26,11 @@ class PageSeeder extends Seeder
             '/login',
         ];
 
+        // Additional paths for non-prodi sites, keyed by base_url
+        $extraPaths = [
+            'http://siakad.itk.ac.id' => ['/home.php'],
+        ];
+
         $sites = \App\Models\Site::all();
 
         foreach ($sites as $site) {
@@ -47,13 +52,15 @@ class PageSeeder extends Seeder
             }
 
             // Non-prodi sites
-            \App\Models\Page::updateOrCreate(
-                [
-                    'site_id' => $site->id,
-                    'path' => '/',
-                ],
-                []
-            );
+            foreach (['/', ...($extraPaths[$site->base_url] ?? [])] as $path) {
+                \App\Models\Page::updateOrCreate(
+                    [
+                        'site_id' => $site->id,
+                        'path' => $path,
+                    ],
+                    []
+                );
+            }
         }
     }
 }

@@ -11,11 +11,12 @@ Website monitoring system for Institut Teknologi Kalimantan (ITK). Performs auto
 - Live checking log drawer showing per-page results in real-time during cycles
 - Telegram bot notifications (consolidated down alerts, recovery alerts, system health alerts)
 - Per-site and bulk refresh with async background processing (non-blocking `popen`)
-- Role-based access (Admin, Super Admin) with configurable session timeout
+- Role-based access (Admin, Super Admin) with session timeout
+- Monitoring on/off switch, globally and per site
 - Site detail view with response time and downtime charts (7 time filters: 1D/3D/7D/1M/3M/6M/1Y)
 - Overview charts with per-site filtering via Tom Select
 - Category management (CRUD) for organizing monitored sites
-- Downtime history log showing outage windows per site (last 30 days)
+- Downtime history log showing outage windows per site, filterable by site, status and range (1 day to all time)
 - System self-health monitoring (alerts on 3 consecutive cycle failures)
 - Pagination and search/filter on dashboard site list
 
@@ -24,9 +25,9 @@ Website monitoring system for Institut Teknologi Kalimantan (ITK). Performs auto
 - **Backend**: Laravel 13, PHP 8.3+
 - **Frontend**: Blade, Livewire 4, Alpine.js, Tailwind CSS v4, DaisyUI
 - **Icons**: Font Awesome Pro (all variants)
-- **Charts**: Chart.js
+- **Charts**: Chart.js (dashboard), ApexCharts (downtime timeline)
 - **Select UI**: Tom Select
-- **Database**: SQLite (dev) / MySQL (production)
+- **Database**: MySQL (the test suite uses in-memory SQLite)
 - **Notifications**: Telegram Bot API
 - **Testing**: Pest PHP 4 (unit, feature, property-based tests)
 - **Dev Tools**: Laravel Telescope, Laravel Pail, Laravel Pint
@@ -35,8 +36,8 @@ Website monitoring system for Institut Teknologi Kalimantan (ITK). Performs auto
 
 - PHP 8.3+
 - Composer
-- Node.js 18+
-- SQLite or MySQL
+- Node.js 20.19+ or 22.12+
+- MySQL
 
 ## Setup
 
@@ -54,7 +55,7 @@ cp .env.example .env
 # Generate application key
 php artisan key:generate
 
-# Run migrations and seed data
+# Create the database named in DB_DATABASE first (webstatus_v2 by default), then run migrations and seed data
 php artisan migrate --seed
 
 # Serve the application
@@ -72,12 +73,15 @@ composer dev
 Edit `.env` for:
 
 ```env
-APP_URL=http://localhost:8000
-DB_CONNECTION=sqlite
+APP_URL=http://webstatus-v2.test
+DB_CONNECTION=mysql
+DB_DATABASE=webstatus_v2
 
 TELEGRAM_BOT_TOKEN=your-bot-token-here
 TELEGRAM_WEBHOOK_SECRET=your-random-secret
 ```
+
+Telescope is on by default when `APP_ENV=local` and off everywhere else. Set `TELESCOPE_ENABLED` to override that. It is a dev dependency, so it is unavailable after `composer install --no-dev`.
 
 ### System Config (Admin Panel)
 
@@ -85,13 +89,20 @@ Health check and notification settings are configurable from the System Config p
 
 | Setting | Default (seeder) | Range |
 |---------|------------------|-------|
+| Monitoring | On | On/Off |
 | Cycle Interval | 10 minutes | 5–1440 min |
 | Notification Cycle Threshold | 6 cycles | 1–100 |
-| False Positive Threshold | 3 cycles | Fixed |
-| Session Timeout | 30 minutes | 5–480 min |
 | Connection Timeout | 10 seconds | 1–60 sec |
 | Response Timeout | 25 seconds | 5–120 sec |
 | Concurrency Limit | 30 requests | 5–100 |
+
+These have no field on that page. Change them in the `system_configs` table:
+
+| Key | Default (seeder) |
+|-----|------------------|
+| `false_positive_threshold` | 3 cycles |
+| `session_timeout_minutes` | 30 minutes |
+| `check_results_retention_days` | 30 days (only used by the prune command below) |
 
 ## Running the Monitoring Cycle
 
@@ -115,6 +126,18 @@ php artisan schedule:daemon
 
 See the [VPS Deployment Guide](#vps-deployment-guide) section below.
 
+### Pruning Old Results
+
+Raw check results add up quickly, and nothing deletes them automatically. To remove old ones by hand:
+
+```bash
+php artisan app:prune-monitoring-data --dry-run   # show what would be deleted
+php artisan app:prune-monitoring-data             # keep the retention period from system_configs
+php artisan app:prune-monitoring-data --days=90   # or set it for this run (minimum 7)
+```
+
+This also deletes hourly stats older than a year. Daily, weekly and monthly stats and downtime history are kept. Deleted rows cannot be recovered, and `stats:aggregate --backfill` refuses to run after the first prune because it would overwrite older history.
+
 ## Telegram Bot Commands
 
 | Command | Description |
@@ -132,7 +155,10 @@ See the [VPS Deployment Guide](#vps-deployment-guide) section below.
 
 After seeding:
 
-- **Super Admin**: `super_admin` / `password`
+- **Super Admin**: `superadmin`
+- **Admin**: `admin`
+
+Their passwords are set in `database/seeders`. Change both before exposing the site. Seeding also adds active Telegram recipients from `TelegramTargetSeeder`, so those chats receive alerts once a bot token is set. Review that list before seeding a new install.
 
 ## Running Tests
 
@@ -399,6 +425,12 @@ Add:
 ```
 
 ### 11. Telegram Webhook
+
+Register the bot's command menu:
+
+```bash
+php artisan telegram:set-commands
+```
 
 If your domain has a **public DNS record** (resolvable from the internet):
 

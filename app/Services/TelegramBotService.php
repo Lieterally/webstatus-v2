@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\SiteStatus;
 use App\Models\Site;
+use App\Models\SystemConfig;
 use App\Models\TelegramTarget;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -252,7 +253,13 @@ class TelegramBotService implements TelegramBotServiceInterface
     private function handleDown(string $chatId): void
     {
         try {
-            $downSites = Site::whereIn('status', [SiteStatus::PartiallyDown, SiteStatus::TotallyDown])
+            if (!SystemConfig::isMonitoringEnabled()) {
+                $this->sendMessage($chatId, "⏸ Monitoring is turned off, so current site status isn't available.");
+                return;
+            }
+
+            $downSites = Site::where('is_monitored', true)
+                ->whereIn('status', [SiteStatus::PartiallyDown, SiteStatus::TotallyDown])
                 ->orderBy('name')
                 ->get();
 
@@ -292,6 +299,11 @@ class TelegramBotService implements TelegramBotServiceInterface
     private function handleRefresh(string $chatId): void
     {
         try {
+            if (!SystemConfig::isMonitoringEnabled()) {
+                $this->sendMessage($chatId, "⏸ Monitoring is turned off, so a refresh can't be run.");
+                return;
+            }
+
             /** @var MonitoringServiceInterface $monitoringService */
             $monitoringService = app(MonitoringServiceInterface::class);
 
@@ -313,7 +325,8 @@ class TelegramBotService implements TelegramBotServiceInterface
                 . "🔴 Down: {$result->sitesDown}\n";
 
             if ($result->sitesDown > 0) {
-                $downSites = Site::whereIn('status', [SiteStatus::PartiallyDown, SiteStatus::TotallyDown])
+                $downSites = Site::where('is_monitored', true)
+                    ->whereIn('status', [SiteStatus::PartiallyDown, SiteStatus::TotallyDown])
                     ->orderBy('name')
                     ->pluck('name');
 

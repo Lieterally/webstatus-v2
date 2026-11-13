@@ -3,6 +3,7 @@
     cycleInProgress: @entangle('cycleInProgress'),
     cycleIntervalSeconds: @entangle('cycleIntervalSeconds'),
     isRefreshing: @entangle('isRefreshing'),
+    monitoringEnabled: @entangle('monitoringEnabled'),
     intervalId: null,
 
     init() {
@@ -46,7 +47,7 @@
 
         {{-- Refresh All Button + Log Button --}}
         <div class="flex items-center gap-2">
-            <button wire:click="refreshAll" wire:loading.attr="disabled" x-bind:disabled="cycleInProgress || isRefreshing"
+            <button wire:click="refreshAll" wire:loading.attr="disabled" x-bind:disabled="cycleInProgress || isRefreshing || !monitoringEnabled"
                 class="btn btn-primary btn-md gap-2">
 
                 <!-- Loading Icon -->
@@ -81,6 +82,9 @@
             </div>
             <div class="stat-title">Total Sites</div>
             <div class="stat-value text-base-content">{{ $totalSites }}</div>
+            @if ($sitesUnmonitored > 0)
+                <div class="stat-desc">{{ $sitesUnmonitored }} not monitored</div>
+            @endif
         </div>
 
         {{-- Sites Down --}}
@@ -126,7 +130,10 @@
                         <span class="text-xs font-medium text-warning">Refreshing... (paused)</span>
                     </div>
                 </template>
-                <template x-if="!cycleInProgress && !isRefreshing">
+                <template x-if="!cycleInProgress && !isRefreshing && !monitoringEnabled">
+                    <span class="text-xs font-medium text-warning">Monitoring is turned off</span>
+                </template>
+                <template x-if="!cycleInProgress && !isRefreshing && monitoringEnabled">
                     <div class="flex items-center gap-1.5">
                         <svg class="h-3.5 w-3.5 text-base-content/40" fill="none" stroke="currentColor"
                             viewBox="0 0 24 24">
@@ -149,70 +156,8 @@
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                 <div>
                     <h2 class="card-title">Overview</h2>
-                    @if ($overviewSiteInfo)
-                        <p class="text-sm text-base-content/60 mt-0.5">
-                            <span class="font-medium">{{ $overviewSiteInfo->name }}</span>
-                            <span class="text-base-content/40 ml-1">{{ $overviewSiteInfo->base_url }}</span>
-                        </p>
-                    @endif
                 </div>
                 <div class="flex items-center gap-2">
-                    {{-- <label for="overviewSiteFilter" class="text-sm text-base-content/60">Filter site:</label>
-                    <select id="overviewSiteFilter" wire:model.live="overviewSiteFilter"
-                        class="select select-bordered select-sm">
-                        <option value="">All Sites</option>
-                        @foreach ($allSites as $s)
-                            <option value="{{ $s->id }}">{{ $s->name }}</option>
-                        @endforeach
-                    </select> --}}
-
-                    {{-- Site Filter --}}
-                    {{-- 
-                    <div class="dropdown">
-                        <div tabindex="0" role="button" class="btn btn-sm">
-                            {{ $overviewSiteFilter ? $allSites->firstWhere('id', $overviewSiteFilter)?->name ?? 'All Sites' : 'All Sites' }}
-                        </div>
-
-                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-10 w-52 p-2 shadow">
-                            <li><a wire:click="$set('overviewSiteFilter', '')">All Sites</a></li>
-
-                            @foreach ($allSites as $s)
-                                <li>
-                                    <a wire:click="$set('overviewSiteFilter', {{ $s->id }})">
-                                        {{ $s->name }}
-                                    </a>
-                                </li>
-                            @endforeach
-                        </ul>
-                    </div> --}}
-
-                    <div x-data="{
-                        tomSelect: null,
-                        init() {
-                            this.tomSelect = new TomSelect(this.$refs.overviewSiteSelect, {
-                                placeholder: 'All Sites',
-                                allowEmptyOption: true,
-                                onChange: (value) => {
-                                    @this.set('overviewSiteFilter', value || null);
-                                }
-                            });
-                        },
-                        destroy() {
-                            if (this.tomSelect) {
-                                this.tomSelect.destroy();
-                            }
-                        }
-                    }" wire:ignore>
-                        <select x-ref="overviewSiteSelect" id="overviewSiteFilter">
-                            <option value="">All Sites</option>
-                            @foreach ($allSites as $s)
-                                <option value="{{ $s->id }}"
-                                    {{ $overviewSiteFilter == $s->id ? 'selected' : '' }}>
-                                    {{ $s->name }}
-                                </option>
-                            @endforeach
-                        </select>
-                    </div>
                 </div>
             </div>
 
@@ -287,11 +232,22 @@
                 {{-- Downtime Chart --}}
                 <div>
                     <div class="flex items-center justify-between mb-3">
-                        <h3 class="text-sm font-semibold text-base-content/70">Downtime</h3>
+                        <a href="{{ route('downtime.index') }}"
+                            class="text-sm font-semibold text-base-content/70 hover:text-primary transition-colors duration-150 group">
+                            Downtime
+                            <i
+                                class="fa-solid fa-arrow-right text-xs px-2 group-hover:translate-x-0.5 transition-transform duration-150"></i>
+                        </a>
                         <div class="flex items-center gap-2">
                             <span class="badge badge-error badge-sm" id="downtimeTotalBadge">
                                 Total: {{ $overviewChartData['downtime']['totalHours'] }}
                             </span>
+                            {{-- <a href="{{ route('downtime.index') }}"
+                                class="badge badge-error badge-sm gap-1 hover:badge-error cursor-pointer"
+                                id="downtimeTotalBadge">
+                                Total: {{ $overviewChartData['downtime']['totalHours'] }}
+                                <i class="fa-solid fa-arrow-right text-xs"></i>
+                            </a> --}}
                             <div class="join">
                                 @foreach (['1D', '3D', '7D', '1M', '3M', '6M', '1Y'] as $filter)
                                     <button wire:click="$set('downtimeFilter', '{{ $filter }}')"
@@ -550,6 +506,10 @@
                             \App\Enums\SiteStatus::PartiallyDown => 'Partially Down',
                             \App\Enums\SiteStatus::TotallyDown => 'Totally Down',
                         };
+                        if (!$siteData['site']->is_monitored) {
+                            $badgeClass = 'badge-ghost';
+                            $statusLabel = 'Not Monitored';
+                        }
                     @endphp
                     <span class="badge {{ $badgeClass }}">
                         {{ $statusLabel }}
@@ -558,7 +518,7 @@
 
                 {{-- Per-Site Refresh Button --}}
                 <button wire:click="refreshSite({{ $siteData['site']->id }})" wire:loading.attr="disabled"
-                    wire:target="refreshSite" class="btn btn-primary btn-sm gap-2">
+                    wire:target="refreshSite" class="btn btn-primary btn-sm gap-2" @disabled(!$siteData['site']->is_monitored || !$monitoringEnabled)>
                     <svg wire:loading wire:target="refreshSite" class="animate-spin h-4 w-4 text-white"
                         xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
@@ -578,7 +538,7 @@
             </div>
 
             {{-- Down Info (shown when site is down) --}}
-            @if ($siteData['downInfo'])
+            @if ($siteData['downInfo'] && $siteData['site']->is_monitored)
                 <div class="px-6 py-3 bg-error/10 border-b border-error/20">
                     <div class="flex flex-wrap items-center gap-4 text-sm">
                         <div class="flex items-center gap-1.5">
@@ -839,6 +799,11 @@
                                 \App\Enums\SiteStatus::PartiallyDown => 'Partially Down',
                                 \App\Enums\SiteStatus::TotallyDown => 'Totally Down',
                             };
+                            if (!$site->is_monitored) {
+                                $cardBorder = 'border-l-base-300';
+                                $cardBadge = 'badge-ghost';
+                                $cardStatusText = 'Not Monitored';
+                            }
                         @endphp
                         <div wire:click="selectSite({{ $site->id }})"
                             class="card bg-base-100 shadow-sm border-l-4 {{ $cardBorder }} p-3 cursor-pointer hover:shadow-md transition-shadow">
@@ -885,6 +850,10 @@
                                         \App\Enums\SiteStatus::PartiallyDown => 'Partially Down',
                                         \App\Enums\SiteStatus::TotallyDown => 'Totally Down',
                                     };
+                                    if (!$site->is_monitored) {
+                                        $tableBadge = 'badge-ghost';
+                                        $tableStatusText = 'Not Monitored';
+                                    }
                                     $httpCode = $siteMetrics[$site->id]['latest_http_code'] ?? null;
                                     $avgTime24h = $siteMetrics[$site->id]['avg_response_time_24h'] ?? 0;
                                 @endphp

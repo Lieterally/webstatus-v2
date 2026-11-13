@@ -10,6 +10,7 @@ use App\Services\MonitoringServiceInterface;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Livewire\Attributes\Computed;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -24,6 +25,12 @@ class Dashboard extends Component
 
     /** Number of sites that are up */
     public int $sitesUp = 0;
+
+    /** Sites excluded from checking cycles */
+    public int $sitesUnmonitored = 0;
+
+    /** Whether monitoring cycles are globally turned on */
+    public bool $monitoringEnabled = true;
 
     /** Datetime of the last completed checking cycle (YYYY-MM-DD HH:mm:ss) or null */
     public ?string $lastCycleDatetime = null;
@@ -79,29 +86,17 @@ class Dashboard extends Component
     /** Whether a per-site refresh is in progress */
     public bool $isSiteRefreshing = false;
 
-    /** Site detail response time filter: 1D, 3D, 7D, 1M */
-    public string $siteResponseTimeFilter = '1D';
-
-    /** Site detail downtime filter: 1D, 3D, 7D, 1M */
-    public string $siteDowntimeFilter = '7D';
-
-    /** Overview chart site filter: null means all sites averaged */
-    public ?int $overviewSiteFilter = null;
-
-    /** Response time chart time filter: 1D, 3D, 7D, 1M */
+    /** Overview response time chart filter */
     public string $responseTimeFilter = '1D';
 
-    /** Downtime chart time filter: 1D, 3D, 7D, 1M */
-    public string $downtimeFilter = '7D';
+    /** Overview downtime chart filter */
+    public string $downtimeFilter = '1D';
 
-    /**
-     * Called automatically when overviewSiteFilter changes (via wire:model.live).
-     * Dispatches updated chart data to Alpine via a browser event.
-     */
-    public function updatedOverviewSiteFilter(): void
-    {
-        $this->dispatch('overviewChartsUpdated', $this->overviewChartData);
-    }
+    /** Site detail response time filter */
+    public string $siteResponseTimeFilter = '1D';
+
+    /** Site detail downtime filter */
+    public string $siteDowntimeFilter = '1D';
 
     /**
      * Called automatically when responseTimeFilter changes.
@@ -124,8 +119,9 @@ class Dashboard extends Component
      */
     public function updatedSiteResponseTimeFilter(): void
     {
+        unset($this->selectedSiteData); // bust the in-request Computed cache
         $this->dispatch('siteChartsUpdated', [
-            'responseTimeData' => $this->getSiteResponseTimeFiltered(),
+            'responseTimeData' => $this->getSiteResponseTimeData(),
         ]);
     }
 
@@ -134,8 +130,9 @@ class Dashboard extends Component
      */
     public function updatedSiteDowntimeFilter(): void
     {
+        unset($this->selectedSiteData); // bust the in-request Computed cache
         $this->dispatch('siteChartsUpdated', [
-            'downtimeData' => $this->getSiteDowntimeFiltered(),
+            'downtimeData' => $this->getSiteDowntimeData(),
         ]);
     }
 
@@ -166,7 +163,10 @@ class Dashboard extends Component
         }
 
         // Auto-trigger cycle when countdown has expired and no cycle is running
-        if ($cycleState->countdownSeconds === 0 && !$cycleState->cycleInProgress && !$this->isRefreshing) {
+        if (
+            $cycleState->countdownSeconds === 0 && !$cycleState->cycleInProgress && !$this->isRefreshing
+            && \App\Models\SystemConfig::isMonitoringEnabled()
+        ) {
             // Use an atomic lock to prevent multiple poll requests from spawning duplicate processes.
             $lock = \Illuminate\Support\Facades\Cache::lock('poll_cycle_trigger_lock', 120);
 
@@ -213,7 +213,7 @@ class Dashboard extends Component
         $monitoringService = app(MonitoringServiceInterface::class);
 
         // Prevent duplicate refresh if already in progress
-        if ($monitoringService->isCycleInProgress()) {
+        if ($monitoringService->isCycleInProgress() || !\App\Models\SystemConfig::isMonitoringEnabled()) {
             return;
         }
 
@@ -245,7 +245,8 @@ class Dashboard extends Component
     {
         $this->selectedSiteId = $siteId;
         $this->siteResponseTimeFilter = '1D';
-        $this->siteDowntimeFilter = '7D';
+        $this->siteDowntimeFilter = '1D';
+        $this->bustSelectedSiteCache();
     }
 
     /**
@@ -261,6 +262,13 @@ class Dashboard extends Component
      */
     public function refreshSite(int $siteId): void
     {
+        if (
+            !\App\Models\SystemConfig::isMonitoringEnabled()
+            || !Site::whereKey($siteId)->where('is_monitored', true)->exists()
+        ) {
+            return;
+        }
+
         $monitoringService = app(MonitoringServiceInterface::class);
 
         $this->isSiteRefreshing = true;
@@ -269,6 +277,9 @@ class Dashboard extends Component
         $monitoringService->refreshSite($siteId);
 
         $this->isSiteRefreshing = false;
+
+        // Bust the site detail cache so the panel reloads fresh data
+        $this->bustSelectedSiteCache();
 
         // Reload data
         $this->loadDashboardData();
@@ -300,453 +311,167 @@ class Dashboard extends Component
 
     /**
      * Get detailed data for the selected site including pages, charts, and down info.
+     * Cached via Cache::remember (keyed by site ID + filters) so it does not re-run
+     * on every 2-second poll tick. Call bustSelectedSiteCache() to invalidate.
      */
-    public function getSelectedSiteDataProperty(): ?array
+    #[Computed]
+    public function selectedSiteData(): ?array
     {
         if (!$this->selectedSiteId) {
             return null;
         }
 
+        // Always load the site model fresh — never serialize Eloquent models into the cache,
+        // as deserialization fails when the class isn't loaded at cache-read time.
         $site = Site::with(['pages', 'responsiblePerson', 'category'])->find($this->selectedSiteId);
 
         if (!$site) {
-            $this->selectedSiteId = null;
             return null;
         }
 
-        // Get latest check results for each page
-        $pageResults = $this->getLatestPageResults($site);
+        $cacheKey = "site_detail_{$this->selectedSiteId}_{$this->siteResponseTimeFilter}_{$this->siteDowntimeFilter}";
 
-        // Get response time chart data (filtered)
-        $responseTimeData = $this->getSiteResponseTimeFiltered();
+        $cached = Cache::remember($cacheKey, 30, function () use ($site) {
+            // Get latest check results for each page
+            $pageResults = $this->getLatestPageResults($site);
 
-        // Get downtime chart data (filtered)
-        $downtimeData = $this->getSiteDowntimeFiltered();
+            // Get response time chart data from rollup tables
+            $responseTimeData = $this->getSiteResponseTimeData();
 
-        // Calculate down duration if site is down
-        $downInfo = $this->getDownInfo($site);
+            // Get downtime chart data from rollup tables
+            $downtimeData = $this->getSiteDowntimeData();
 
-        // Get downtime history (last 30 days of outage events)
-        $downtimeHistory = $this->getDowntimeHistory($site);
+            // Calculate down duration if site is down
+            $downInfo = $this->getDownInfo($site);
 
-        return [
-            'site' => $site,
-            'pageResults' => $pageResults,
-            'responseTimeData' => $responseTimeData,
-            'downtimeData' => $downtimeData,
-            'downInfo' => $downInfo,
-            'downtimeHistory' => $downtimeHistory,
-        ];
+            // Get downtime history (last 30 days of outage events)
+            $downtimeHistory = $this->getDowntimeHistory($site);
+
+            return [
+                'pageResults'      => $pageResults,
+                'responseTimeData' => $responseTimeData,
+                'downtimeData'     => $downtimeData,
+                'downInfo'         => $downInfo,
+                'downtimeHistory'  => $downtimeHistory,
+            ];
+        });
+
+        // Merge the live model back in so the blade always gets a fully-loaded object
+        return array_merge(['site' => $site], $cached);
+    }
+
+    /**
+     * Bust the site detail cache for the currently selected site.
+     */
+    private function bustSelectedSiteCache(): void
+    {
+        if (!$this->selectedSiteId) {
+            return;
+        }
+        foreach (['1D', '3D', '7D', '1M', '3M', '6M', '1Y'] as $rtf) {
+            foreach (['1D', '3D', '7D', '1M', '3M', '6M', '1Y'] as $dtf) {
+                Cache::forget("site_detail_{$this->selectedSiteId}_{$rtf}_{$dtf}");
+            }
+        }
+        unset($this->selectedSiteData);
     }
 
     /**
      * Get the latest check results for each page of a site.
+     * Uses a single batched query instead of one query per page.
      */
     private function getLatestPageResults(Site $site): array
     {
-        $results = [];
+        $pageIds = $site->pages->pluck('id')->toArray();
 
-        foreach ($site->pages as $page) {
-            $latestResult = CheckResult::where('page_id', $page->id)
-                ->orderBy('checked_at', 'desc')
-                ->first();
-
-            $results[] = [
-                'page_id' => $page->id,
-                'path' => $page->path,
-                'full_url' => rtrim($site->base_url, '/') . $page->path,
-                'http_code' => $latestResult?->http_code ?? null,
-                'response_time_ms' => $latestResult?->response_time_ms ?? null,
-                'error_type' => $latestResult?->error_type?->value ?? null,
-                'checked_at' => $latestResult?->checked_at?->format('Y-m-d H:i:s') ?? null,
-            ];
+        if (empty($pageIds)) {
+            return [];
         }
 
-        return $results;
+        // Fetch the latest check result per page. Inlined integers let MySQL jump
+        // straight to MAX(id) per page; bound parameters make it read every row of those pages.
+        $latestIds = CheckResult::selectRaw('MAX(id) AS id')
+            ->whereIntegerInRaw('page_id', $pageIds)
+            ->groupBy('page_id')
+            ->pluck('id');
+
+        $latestResults = CheckResult::whereIn('id', $latestIds)
+            ->get()
+            ->keyBy('page_id');
+
+        return $site->pages->map(fn($page) => [
+            'page_id'          => $page->id,
+            'path'             => $page->path,
+            'full_url'         => rtrim($site->base_url, '/') . $page->path,
+            'http_code'        => $latestResults[$page->id]?->http_code ?? null,
+            'response_time_ms' => $latestResults[$page->id]?->response_time_ms ?? null,
+            'error_type'       => $latestResults[$page->id]?->error_type?->value ?? null,
+            'checked_at'       => $latestResults[$page->id]?->checked_at?->format('Y-m-d H:i:s') ?? null,
+        ])->toArray();
     }
 
     /**
-     * Get response time chart data for the selected site based on siteResponseTimeFilter.
+     * Get response time chart data for the selected site from rollup tables.
      */
-    private function getSiteResponseTimeFiltered(): array
+    private function getSiteResponseTimeData(): array
     {
         if (!$this->selectedSiteId) {
-            return ['labels' => [], 'data' => [], 'xLabel' => 'Time', 'filter' => $this->siteResponseTimeFilter];
+            return ['labels' => [], 'data' => [], 'xLabel' => 'Hours'];
         }
 
-        $now = Carbon::now();
-        $labels = [];
-        $data = [];
-
-        switch ($this->siteResponseTimeFilter) {
-            case '1D':
-                $start = $now->copy()->startOfHour()->subHours(23);
-                for ($i = 0; $i < 24; $i++) {
-                    $bucketStart = $start->copy()->addHours($i);
-                    $bucketEnd = $bucketStart->copy()->addHour();
-                    $labels[] = $bucketStart->format('H:00');
-                    $avgMs = CheckResult::where('site_id', $this->selectedSiteId)
-                        ->where('checked_at', '>=', $bucketStart)
-                        ->where('checked_at', '<', $bucketEnd)
-                        ->where('http_code', '>', 0)
-                        ->avg('response_time_ms');
-                    $data[] = $avgMs !== null ? round($avgMs / 1000, 3) : null;
-                }
-                $xLabel = 'Hours';
-                break;
-
-            case '3D':
-                $start = $now->copy()->startOfDay()->subDays(2);
-                for ($i = 0; $i < 12; $i++) {
-                    $bucketStart = $start->copy()->addHours($i * 6);
-                    $bucketEnd = $bucketStart->copy()->addHours(6);
-                    $labels[] = $bucketStart->format('M d H:00');
-                    $avgMs = CheckResult::where('site_id', $this->selectedSiteId)
-                        ->where('checked_at', '>=', $bucketStart)
-                        ->where('checked_at', '<', $bucketEnd)
-                        ->where('http_code', '>', 0)
-                        ->avg('response_time_ms');
-                    $data[] = $avgMs !== null ? round($avgMs / 1000, 3) : null;
-                }
-                $xLabel = '6-Hour Intervals';
-                break;
-
-            case '7D':
-                for ($i = 6; $i >= 0; $i--) {
-                    $dayStart = $now->copy()->subDays($i)->startOfDay();
-                    $dayEnd = $dayStart->copy()->endOfDay();
-                    $labels[] = $dayStart->format('M d');
-                    $avgMs = CheckResult::where('site_id', $this->selectedSiteId)
-                        ->where('checked_at', '>=', $dayStart)
-                        ->where('checked_at', '<', $dayEnd)
-                        ->where('http_code', '>', 0)
-                        ->avg('response_time_ms');
-                    $data[] = $avgMs !== null ? round($avgMs / 1000, 3) : null;
-                }
-                $xLabel = 'Days';
-                break;
-
-            case '1M':
-                for ($i = 29; $i >= 0; $i--) {
-                    $dayStart = $now->copy()->subDays($i)->startOfDay();
-                    $dayEnd = $dayStart->copy()->endOfDay();
-                    $labels[] = $dayStart->format('M d');
-                    $avgMs = CheckResult::where('site_id', $this->selectedSiteId)
-                        ->where('checked_at', '>=', $dayStart)
-                        ->where('checked_at', '<', $dayEnd)
-                        ->where('http_code', '>', 0)
-                        ->avg('response_time_ms');
-                    $data[] = $avgMs !== null ? round($avgMs / 1000, 3) : null;
-                }
-                $xLabel = 'Days';
-                break;
-
-            case '3M':
-                for ($i = 12; $i >= 0; $i--) {
-                    $weekStart = $now->copy()->subWeeks($i)->startOfWeek();
-                    $weekEnd = $weekStart->copy()->endOfWeek();
-                    $labels[] = $weekStart->format('M d');
-                    $avgMs = CheckResult::where('site_id', $this->selectedSiteId)
-                        ->where('checked_at', '>=', $weekStart)
-                        ->where('checked_at', '<', $weekEnd)
-                        ->where('http_code', '>', 0)
-                        ->avg('response_time_ms');
-                    $data[] = $avgMs !== null ? round($avgMs / 1000, 3) : null;
-                }
-                $xLabel = 'Weeks';
-                break;
-
-            case '6M':
-                for ($i = 25; $i >= 0; $i--) {
-                    $weekStart = $now->copy()->subWeeks($i)->startOfWeek();
-                    $weekEnd = $weekStart->copy()->endOfWeek();
-                    $labels[] = $weekStart->format('M d');
-                    $avgMs = CheckResult::where('site_id', $this->selectedSiteId)
-                        ->where('checked_at', '>=', $weekStart)
-                        ->where('checked_at', '<', $weekEnd)
-                        ->where('http_code', '>', 0)
-                        ->avg('response_time_ms');
-                    $data[] = $avgMs !== null ? round($avgMs / 1000, 3) : null;
-                }
-                $xLabel = 'Weeks';
-                break;
-
-            case '1Y':
-                for ($i = 11; $i >= 0; $i--) {
-                    $monthStart = $now->copy()->subMonths($i)->startOfMonth();
-                    $monthEnd = $monthStart->copy()->endOfMonth();
-                    $labels[] = $monthStart->format('M Y');
-                    $avgMs = CheckResult::where('site_id', $this->selectedSiteId)
-                        ->where('checked_at', '>=', $monthStart)
-                        ->where('checked_at', '<', $monthEnd)
-                        ->where('http_code', '>', 0)
-                        ->avg('response_time_ms');
-                    $data[] = $avgMs !== null ? round($avgMs / 1000, 3) : null;
-                }
-                $xLabel = 'Months';
-                break;
-
-            default:
-                for ($i = 29; $i >= 0; $i--) {
-                    $dayStart = $now->copy()->subDays($i)->startOfDay();
-                    $dayEnd = $dayStart->copy()->endOfDay();
-                    $labels[] = $dayStart->format('M d');
-                    $avgMs = CheckResult::where('site_id', $this->selectedSiteId)
-                        ->where('checked_at', '>=', $dayStart)
-                        ->where('checked_at', '<', $dayEnd)
-                        ->where('http_code', '>', 0)
-                        ->avg('response_time_ms');
-                    $data[] = $avgMs !== null ? round($avgMs / 1000, 3) : null;
-                }
-                $xLabel = 'Days';
-                break;
-        }
-
-        return ['labels' => $labels, 'data' => $data, 'xLabel' => $xLabel, 'filter' => $this->siteResponseTimeFilter];
+        return $this->getChartDataFromRollup($this->siteResponseTimeFilter, $this->selectedSiteId, 'avg_response_time_ms');
     }
 
     /**
-     * Get downtime chart data for the selected site based on siteDowntimeFilter.
+     * Get downtime chart data for the selected site from rollup tables.
      */
-    private function getSiteDowntimeFiltered(): array
+    private function getSiteDowntimeData(): array
     {
         if (!$this->selectedSiteId) {
-            return ['labels' => [], 'data' => [], 'yLabel' => '', 'yMax' => 24, 'xLabel' => 'Time', 'unit' => 'hours', 'totalHours' => '0h', 'filter' => $this->siteDowntimeFilter];
+            return ['labels' => [], 'data' => [], 'yLabel' => '', 'yMax' => 1, 'xLabel' => 'Hours', 'unit' => 'hours', 'totalHours' => '0h'];
         }
 
-        $now = Carbon::now();
-        $labels = [];
-        $data = [];
+        $chartData = $this->getChartDataFromRollup($this->siteDowntimeFilter, $this->selectedSiteId, 'downtime_seconds');
 
-        // Temporarily set overviewSiteFilter to use the shared getDowntimeSeconds method
-        $originalFilter = $this->overviewSiteFilter;
-        $this->overviewSiteFilter = $this->selectedSiteId;
+        // Convert seconds to hours for display
+        $data = array_map(fn($val) => $val !== null ? round($val / 3600, 4) : 0, $chartData['data']);
+        $totalSeconds = array_sum($chartData['data'] ?? []);
 
-        switch ($this->siteDowntimeFilter) {
-            case '1D':
-                $start = $now->copy()->startOfHour()->subHours(23);
-                for ($i = 0; $i < 24; $i++) {
-                    $bucketStart = $start->copy()->addHours($i);
-                    $bucketEnd = $bucketStart->copy()->addHour();
-                    $labels[] = $bucketStart->format('H:00');
-                    $seconds = $this->getDowntimeSeconds($bucketStart, $bucketEnd);
-                    $data[] = round($seconds / 3600, 4);
-                }
-                $yLabel = 'Hours';
-                $yMax = 1;
-                $xLabel = 'Hours';
-                $unit = 'hours';
-                break;
-
-            case '3D':
-                $start = $now->copy()->startOfDay()->subDays(2);
-                for ($i = 0; $i < 12; $i++) {
-                    $bucketStart = $start->copy()->addHours($i * 6);
-                    $bucketEnd = $bucketStart->copy()->addHours(6);
-                    $labels[] = $bucketStart->format('M d H:00');
-                    $seconds = $this->getDowntimeSeconds($bucketStart, $bucketEnd);
-                    $data[] = round($seconds / 3600, 4);
-                }
-                $yLabel = 'Hours per 6h';
-                $yMax = 6;
-                $xLabel = '6-Hour Intervals';
-                $unit = 'hours';
-                break;
-
-            case '7D':
-                for ($i = 6; $i >= 0; $i--) {
-                    $dayStart = $now->copy()->subDays($i)->startOfDay();
-                    $dayEnd = $dayStart->copy()->endOfDay();
-                    $labels[] = $dayStart->format('M d');
-                    $seconds = $this->getDowntimeSeconds($dayStart, $dayEnd);
-                    $data[] = round($seconds / 3600, 2);
-                }
-                $yLabel = 'Hours per day';
-                $yMax = 24;
-                $xLabel = 'Days';
-                $unit = 'hours';
-                break;
-
-            case '1M':
-                for ($i = 29; $i >= 0; $i--) {
-                    $dayStart = $now->copy()->subDays($i)->startOfDay();
-                    $dayEnd = $dayStart->copy()->endOfDay();
-                    $labels[] = $dayStart->format('M d');
-                    $seconds = $this->getDowntimeSeconds($dayStart, $dayEnd);
-                    $data[] = round($seconds / 3600, 2);
-                }
-                $yLabel = 'Hours per day';
-                $yMax = 24;
-                $xLabel = 'Days';
-                $unit = 'hours';
-                break;
-
-            case '3M':
-                for ($i = 12; $i >= 0; $i--) {
-                    $weekStart = $now->copy()->subWeeks($i)->startOfWeek();
-                    $weekEnd = $weekStart->copy()->endOfWeek();
-                    $labels[] = $weekStart->format('M d');
-                    $seconds = $this->getDowntimeSeconds($weekStart, $weekEnd);
-                    $data[] = round($seconds / 3600, 2);
-                }
-                $yLabel = 'Hours per week';
-                $yMax = 168;
-                $xLabel = 'Weeks';
-                $unit = 'hours';
-                break;
-
-            case '6M':
-                for ($i = 25; $i >= 0; $i--) {
-                    $weekStart = $now->copy()->subWeeks($i)->startOfWeek();
-                    $weekEnd = $weekStart->copy()->endOfWeek();
-                    $labels[] = $weekStart->format('M d');
-                    $seconds = $this->getDowntimeSeconds($weekStart, $weekEnd);
-                    $data[] = round($seconds / 3600, 2);
-                }
-                $yLabel = 'Hours per week';
-                $yMax = 168;
-                $xLabel = 'Weeks';
-                $unit = 'hours';
-                break;
-
-            case '1Y':
-                for ($i = 11; $i >= 0; $i--) {
-                    $monthStart = $now->copy()->subMonths($i)->startOfMonth();
-                    $monthEnd = $monthStart->copy()->endOfMonth();
-                    $labels[] = $monthStart->format('M Y');
-                    $seconds = $this->getDowntimeSeconds($monthStart, $monthEnd);
-                    $data[] = round($seconds / 3600, 2);
-                }
-                $yLabel = 'Hours per month';
-                $yMax = null;
-                $xLabel = 'Months';
-                $unit = 'hours';
-                break;
-
-            default:
-                for ($i = 29; $i >= 0; $i--) {
-                    $dayStart = $now->copy()->subDays($i)->startOfDay();
-                    $dayEnd = $dayStart->copy()->endOfDay();
-                    $labels[] = $dayStart->format('M d');
-                    $seconds = $this->getDowntimeSeconds($dayStart, $dayEnd);
-                    $data[] = round($seconds / 3600, 2);
-                }
-                $yLabel = 'Hours per day';
-                $yMax = 24;
-                $xLabel = 'Days';
-                $unit = 'hours';
-                break;
-        }
-
-        // Restore original filter
-        $this->overviewSiteFilter = $originalFilter;
-
-        $totalSeconds = array_sum(array_map(function ($val) use ($unit) {
-            return $unit === 'minutes' ? $val * 60 : $val * 3600;
-        }, $data));
-
-        if ($totalSeconds >= 3600) {
-            $totalLabel = round($totalSeconds / 3600, 2) . 'h';
-        } else {
-            $totalLabel = round($totalSeconds / 60, 1) . 'm';
-        }
+        $totalLabel = $totalSeconds >= 3600
+            ? round($totalSeconds / 3600, 2) . 'h'
+            : round($totalSeconds / 60, 1) . 'm';
 
         return [
-            'labels' => $labels,
+            'labels' => $chartData['labels'],
             'data' => $data,
-            'yLabel' => $yLabel,
-            'yMax' => $yMax,
-            'xLabel' => $xLabel,
-            'unit' => $unit,
+            'yLabel' => 'Hours',
+            'yMax' => $this->getDowntimeYMax($this->siteDowntimeFilter),
+            'xLabel' => $chartData['xLabel'],
+            'unit' => 'hours',
             'totalHours' => $totalLabel,
-            'filter' => $this->siteDowntimeFilter,
         ];
     }
 
     /**
-     * Get downtime history for a site (last 30 days of outage events).
-     * Groups consecutive down checks into outage windows.
+     * Get downtime history for a site from the downtime_histories table.
      */
     private function getDowntimeHistory(Site $site): array
     {
-        $since = Carbon::now()->subDays(30);
-
-        // Get all check results for this site in the last 30 days, ordered by time
-        $results = CheckResult::where('site_id', $site->id)
-            ->where('checked_at', '>=', $since)
-            ->orderBy('checked_at')
-            ->select('cycle_id', 'page_id', 'http_code', 'checked_at', 'error_type')
+        $records = \App\Models\DowntimeHistory::where('site_id', $site->id)
+            ->orderBy('started_at', 'desc')
+            ->limit(50)
             ->get();
 
-        if ($results->isEmpty()) {
-            return [];
-        }
-
-        // Get page paths for display
-        $pages = $site->pages->pluck('path', 'id')->toArray();
-
-        // Group by cycle and determine down pages per cycle
-        $cycles = $results->groupBy('cycle_id');
-        $cycleEntries = [];
-
-        foreach ($cycles as $cycleId => $cycleResults) {
-            $downPages = [];
-            foreach ($cycleResults as $result) {
-                $code = $result->http_code;
-                if ($code === 0 || $code < 200 || $code >= 400) {
-                    $downPages[] = $pages[$result->page_id] ?? '/unknown';
-                }
-            }
-
-            $cycleEntries[] = [
-                'time' => Carbon::parse($cycleResults->first()->checked_at),
-                'down' => !empty($downPages),
-                'downPages' => $downPages,
+        return $records->map(function ($record) {
+            return [
+                'from' => $record->started_at->format('Y-m-d H:i:s'),
+                'to' => $record->ended_at?->format('Y-m-d H:i:s') ?? 'Ongoing',
+                'pages' => implode(', ', $record->affected_pages),
+                'duration' => $this->formatDurationSeconds($record->getLiveDurationSeconds())
+                    . ($record->isActive() ? ' (ongoing)' : '')
+                    . ($record->wasMonitoringStopped() ? ' (monitoring stopped)' : ''),
             ];
-        }
-
-        // Sort by time
-        usort($cycleEntries, fn($a, $b) => $a['time']->timestamp - $b['time']->timestamp);
-
-        // Build outage windows
-        $history = [];
-        $outageStart = null;
-        $outagePages = [];
-
-        foreach ($cycleEntries as $entry) {
-            if ($entry['down'] && $outageStart === null) {
-                $outageStart = $entry['time'];
-                $outagePages = $entry['downPages'];
-            } elseif ($entry['down'] && $outageStart !== null) {
-                // Merge pages
-                $outagePages = array_unique(array_merge($outagePages, $entry['downPages']));
-            } elseif (!$entry['down'] && $outageStart !== null) {
-                // Outage ended
-                $duration = $outageStart->diffInSeconds($entry['time']);
-                $history[] = [
-                    'from' => $outageStart->format('Y-m-d H:i:s'),
-                    'to' => $entry['time']->format('Y-m-d H:i:s'),
-                    'pages' => implode(', ', $outagePages),
-                    'duration' => $this->formatDurationSeconds($duration),
-                ];
-                $outageStart = null;
-                $outagePages = [];
-            }
-        }
-
-        // If still in outage
-        if ($outageStart !== null) {
-            $duration = $outageStart->diffInSeconds(Carbon::now());
-            $history[] = [
-                'from' => $outageStart->format('Y-m-d H:i:s'),
-                'to' => 'Ongoing',
-                'pages' => implode(', ', $outagePages),
-                'duration' => $this->formatDurationSeconds($duration) . ' (ongoing)',
-            ];
-        }
-
-        // Return most recent first
-        return array_reverse($history);
+        })->toArray();
     }
 
     /**
@@ -813,14 +538,19 @@ class Dashboard extends Component
     {
         $monitoringService = app(MonitoringServiceInterface::class);
 
+        $this->monitoringEnabled = \App\Models\SystemConfig::isMonitoringEnabled();
+
         // Get site counts
         $this->totalSites = Site::count();
         // $this->sitesDown = Site::where('status', SiteStatus::PartiallyDown)
         //     ->orWhere('status', SiteStatus::TotallyDown)
         //     ->count();
-        $this->sitesDown = Site::where('status', SiteStatus::TotallyDown)->count();
-        $this->sitesUp = Site::where('status', SiteStatus::Up)
-            ->orWhere('status', SiteStatus::PartiallyDown)
+        $this->sitesUnmonitored = Site::where('is_monitored', false)->count();
+        $this->sitesDown = Site::where('is_monitored', true)
+            ->where('status', SiteStatus::TotallyDown)
+            ->count();
+        $this->sitesUp = Site::where('is_monitored', true)
+            ->whereIn('status', [SiteStatus::Up, SiteStatus::PartiallyDown])
             ->count();
         // $this->sitesUp = Site::where('status', SiteStatus::Up)->count();
 
@@ -852,7 +582,7 @@ class Dashboard extends Component
 
         // Apply status filter
         if ($this->statusFilter !== '') {
-            $query->where('status', $this->statusFilter);
+            $query->where('is_monitored', true)->where('status', $this->statusFilter);
         }
 
         // Apply search filter
@@ -860,466 +590,293 @@ class Dashboard extends Component
             $query->where('name', 'like', '%' . $this->siteSearch . '%');
         }
 
-        // Sort by status priority: totally_down first, partially_down second, up third, then alphabetical
-        $query->orderByRaw("CASE status WHEN 'totally_down' THEN 0 WHEN 'partially_down' THEN 1 WHEN 'up' THEN 2 ELSE 3 END")
+        // Sort unmonitored sites last, then by status priority: totally_down first, partially_down second, up third, then alphabetical
+        $query->orderByDesc('is_monitored')
+            ->orderByRaw("CASE status WHEN 'totally_down' THEN 0 WHEN 'partially_down' THEN 1 WHEN 'up' THEN 2 ELSE 3 END")
             ->orderBy('name');
 
         return $query->paginate(24);
     }
 
     /**
-     * Get overview chart data (response time and downtime) with independent time filters.
+     * Get overview chart data from rollup tables.
      * Cached for 60 seconds to reduce query load during polling.
      */
     public function getOverviewChartDataProperty(): array
     {
-        $cacheKey = "overview_chart_{$this->overviewSiteFilter}_{$this->responseTimeFilter}_{$this->downtimeFilter}";
+        $cacheKey = "overview_chart_{$this->responseTimeFilter}_{$this->downtimeFilter}";
 
         return Cache::remember($cacheKey, 60, fn() => [
-            'response' => $this->getResponseTimeChartDataFiltered(),
-            'downtime' => $this->getDowntimeChartDataFiltered(),
+            'response' => $this->getResponseTimeChartData(),
+            'downtime' => $this->getDowntimeChartData(),
         ]);
     }
 
     /**
-     * Get response time chart data based on the selected time filter.
-     *
-     * Granularity:
-     * - 1D: hourly (24 data points)
-     * - 3D: 6-hour intervals (12 data points)
-     * - 7D: daily (7 data points)
-     * - 1M: daily (30 data points)
+     * Get overview response time chart data from rollup tables.
      */
-    private function getResponseTimeChartDataFiltered(): array
+    private function getResponseTimeChartData(): array
     {
-        $now = Carbon::now();
-        $labels = [];
-        $data = [];
-
-        switch ($this->responseTimeFilter) {
-            case '1D':
-                // Hourly for last 24 hours
-                $start = $now->copy()->startOfHour()->subHours(23);
-                for ($i = 0; $i < 24; $i++) {
-                    $bucketStart = $start->copy()->addHours($i);
-                    $bucketEnd = $bucketStart->copy()->addHour();
-                    $labels[] = $bucketStart->format('H:00');
-                    $data[] = $this->getAvgResponseTime($bucketStart, $bucketEnd);
-                }
-                $xLabel = 'Hours';
-                break;
-
-            case '3D':
-                // 6-hour intervals for last 3 days (12 data points)
-                $start = $now->copy()->startOfDay()->subDays(2);
-                for ($i = 0; $i < 12; $i++) {
-                    $bucketStart = $start->copy()->addHours($i * 6);
-                    $bucketEnd = $bucketStart->copy()->addHours(6);
-                    $labels[] = $bucketStart->format('M d H:00');
-                    $data[] = $this->getAvgResponseTime($bucketStart, $bucketEnd);
-                }
-                $xLabel = '6-Hour Intervals';
-                break;
-
-            case '7D':
-                // Daily for last 7 days
-                for ($i = 6; $i >= 0; $i--) {
-                    $dayStart = $now->copy()->subDays($i)->startOfDay();
-                    $dayEnd = $dayStart->copy()->endOfDay();
-                    $labels[] = $dayStart->format('M d');
-                    $data[] = $this->getAvgResponseTime($dayStart, $dayEnd);
-                }
-                $xLabel = 'Days';
-                break;
-
-            case '1M':
-                // Daily for last 30 days
-                for ($i = 29; $i >= 0; $i--) {
-                    $dayStart = $now->copy()->subDays($i)->startOfDay();
-                    $dayEnd = $dayStart->copy()->endOfDay();
-                    $labels[] = $dayStart->format('M d');
-                    $data[] = $this->getAvgResponseTime($dayStart, $dayEnd);
-                }
-                $xLabel = 'Days';
-                break;
-
-            case '3M':
-                // Weekly for last 13 weeks
-                for ($i = 12; $i >= 0; $i--) {
-                    $weekStart = $now->copy()->subWeeks($i)->startOfWeek();
-                    $weekEnd = $weekStart->copy()->endOfWeek();
-                    $labels[] = $weekStart->format('M d');
-                    $data[] = $this->getAvgResponseTime($weekStart, $weekEnd);
-                }
-                $xLabel = 'Weeks';
-                break;
-
-            case '6M':
-                // Weekly for last 26 weeks
-                for ($i = 25; $i >= 0; $i--) {
-                    $weekStart = $now->copy()->subWeeks($i)->startOfWeek();
-                    $weekEnd = $weekStart->copy()->endOfWeek();
-                    $labels[] = $weekStart->format('M d');
-                    $data[] = $this->getAvgResponseTime($weekStart, $weekEnd);
-                }
-                $xLabel = 'Weeks';
-                break;
-
-            case '1Y':
-                // Monthly for last 12 months
-                for ($i = 11; $i >= 0; $i--) {
-                    $monthStart = $now->copy()->subMonths($i)->startOfMonth();
-                    $monthEnd = $monthStart->copy()->endOfMonth();
-                    $labels[] = $monthStart->format('M Y');
-                    $data[] = $this->getAvgResponseTime($monthStart, $monthEnd);
-                }
-                $xLabel = 'Months';
-                break;
-
-            default:
-                // Daily for last 30 days (fallback)
-                for ($i = 29; $i >= 0; $i--) {
-                    $dayStart = $now->copy()->subDays($i)->startOfDay();
-                    $dayEnd = $dayStart->copy()->endOfDay();
-                    $labels[] = $dayStart->format('M d');
-                    $data[] = $this->getAvgResponseTime($dayStart, $dayEnd);
-                }
-                $xLabel = 'Days';
-                break;
-        }
-
-        return ['labels' => $labels, 'data' => $data, 'xLabel' => $xLabel, 'filter' => $this->responseTimeFilter];
+        return $this->getChartDataFromRollup($this->responseTimeFilter, null, 'avg_response_time_ms');
     }
 
     /**
-     * Get average response time (in seconds) for a time bucket, optionally filtered by site.
+     * Get overview downtime chart data from rollup tables.
      */
-    private function getAvgResponseTime(Carbon $start, Carbon $end): ?float
+    private function getDowntimeChartData(): array
     {
-        $query = CheckResult::where('checked_at', '>=', $start)
-            ->where('checked_at', '<', $end)
-            ->where('http_code', '>', 0);
+        $chartData = $this->getChartDataFromRollup($this->downtimeFilter, null, 'downtime_seconds');
 
-        if ($this->overviewSiteFilter) {
-            $query->where('site_id', $this->overviewSiteFilter);
-        }
+        // Convert seconds to hours for display
+        $data = array_map(fn($val) => $val !== null ? round($val / 3600, 4) : 0, $chartData['data']);
+        $totalSeconds = array_sum($chartData['data'] ?? []);
 
-        $avgMs = $query->avg('response_time_ms');
-        return $avgMs !== null ? round($avgMs / 1000, 3) : null;
-    }
-
-    /**
-     * Get downtime chart data based on the selected time filter.
-     *
-     * Granularity:
-     * - 1D: hourly (24 data points, in minutes)
-     * - 3D: 6-hour intervals (12 data points, in minutes)
-     * - 7D: daily (7 data points, in hours)
-     * - 1M: daily (30 data points, in hours)
-     */
-    private function getDowntimeChartDataFiltered(): array
-    {
-        $now = Carbon::now();
-        $labels = [];
-        $data = [];
-
-        switch ($this->downtimeFilter) {
-            case '1D':
-                // Hourly for last 24 hours (downtime in hours per hour, max 1)
-                $start = $now->copy()->startOfHour()->subHours(23);
-                for ($i = 0; $i < 24; $i++) {
-                    $bucketStart = $start->copy()->addHours($i);
-                    $bucketEnd = $bucketStart->copy()->addHour();
-                    $labels[] = $bucketStart->format('H:00');
-                    $seconds = $this->getDowntimeSeconds($bucketStart, $bucketEnd);
-                    $data[] = round($seconds / 3600, 4);
-                }
-                $yLabel = 'Hours';
-                $yMax = 1;
-                $xLabel = 'Hours';
-                $unit = 'hours';
-                break;
-
-            case '3D':
-                // 6-hour intervals for last 3 days (downtime in hours per interval, max 6)
-                $start = $now->copy()->startOfDay()->subDays(2);
-                for ($i = 0; $i < 12; $i++) {
-                    $bucketStart = $start->copy()->addHours($i * 6);
-                    $bucketEnd = $bucketStart->copy()->addHours(6);
-                    $labels[] = $bucketStart->format('M d H:00');
-                    $seconds = $this->getDowntimeSeconds($bucketStart, $bucketEnd);
-                    $data[] = round($seconds / 3600, 4);
-                }
-                $yLabel = 'Hours per 6h';
-                $yMax = 6;
-                $xLabel = '6-Hour Intervals';
-                $unit = 'hours';
-                break;
-
-            case '7D':
-                // Daily for last 7 days (downtime in hours per day, max 24)
-                for ($i = 6; $i >= 0; $i--) {
-                    $dayStart = $now->copy()->subDays($i)->startOfDay();
-                    $dayEnd = $dayStart->copy()->endOfDay();
-                    $labels[] = $dayStart->format('M d');
-                    $seconds = $this->getDowntimeSeconds($dayStart, $dayEnd);
-                    $data[] = round($seconds / 3600, 2);
-                }
-                $yLabel = 'Hours per day';
-                $yMax = 24;
-                $xLabel = 'Days';
-                $unit = 'hours';
-                break;
-
-            case '1M':
-                // Daily for last 30 days (downtime in hours per day, max 24)
-                for ($i = 29; $i >= 0; $i--) {
-                    $dayStart = $now->copy()->subDays($i)->startOfDay();
-                    $dayEnd = $dayStart->copy()->endOfDay();
-                    $labels[] = $dayStart->format('M d');
-                    $seconds = $this->getDowntimeSeconds($dayStart, $dayEnd);
-                    $data[] = round($seconds / 3600, 2);
-                }
-                $yLabel = 'Hours per day';
-                $yMax = 24;
-                $xLabel = 'Days';
-                $unit = 'hours';
-                break;
-
-            case '3M':
-                // Weekly for last 13 weeks (downtime in hours per week)
-                for ($i = 12; $i >= 0; $i--) {
-                    $weekStart = $now->copy()->subWeeks($i)->startOfWeek();
-                    $weekEnd = $weekStart->copy()->endOfWeek();
-                    $labels[] = $weekStart->format('M d');
-                    $seconds = $this->getDowntimeSeconds($weekStart, $weekEnd);
-                    $data[] = round($seconds / 3600, 2);
-                }
-                $yLabel = 'Hours per week';
-                $yMax = 168;
-                $xLabel = 'Weeks';
-                $unit = 'hours';
-                break;
-
-            case '6M':
-                // Weekly for last 26 weeks (downtime in hours per week)
-                for ($i = 25; $i >= 0; $i--) {
-                    $weekStart = $now->copy()->subWeeks($i)->startOfWeek();
-                    $weekEnd = $weekStart->copy()->endOfWeek();
-                    $labels[] = $weekStart->format('M d');
-                    $seconds = $this->getDowntimeSeconds($weekStart, $weekEnd);
-                    $data[] = round($seconds / 3600, 2);
-                }
-                $yLabel = 'Hours per week';
-                $yMax = 168;
-                $xLabel = 'Weeks';
-                $unit = 'hours';
-                break;
-
-            case '1Y':
-                // Monthly for last 12 months (downtime in hours per month)
-                for ($i = 11; $i >= 0; $i--) {
-                    $monthStart = $now->copy()->subMonths($i)->startOfMonth();
-                    $monthEnd = $monthStart->copy()->endOfMonth();
-                    $labels[] = $monthStart->format('M Y');
-                    $seconds = $this->getDowntimeSeconds($monthStart, $monthEnd);
-                    $data[] = round($seconds / 3600, 2);
-                }
-                $yLabel = 'Hours per month';
-                $yMax = null;
-                $xLabel = 'Months';
-                $unit = 'hours';
-                break;
-
-            default:
-                // Daily for last 30 days (fallback)
-                for ($i = 29; $i >= 0; $i--) {
-                    $dayStart = $now->copy()->subDays($i)->startOfDay();
-                    $dayEnd = $dayStart->copy()->endOfDay();
-                    $labels[] = $dayStart->format('M d');
-                    $seconds = $this->getDowntimeSeconds($dayStart, $dayEnd);
-                    $data[] = round($seconds / 3600, 2);
-                }
-                $yLabel = 'Hours per day';
-                $yMax = 24;
-                $xLabel = 'Days';
-                $unit = 'hours';
-                break;
-        }
-
-        $totalSeconds = array_sum(array_map(function ($val) use ($unit) {
-            return $unit === 'minutes' ? $val * 60 : $val * 3600;
-        }, $data));
-
-        // Format total in a readable way
-        if ($totalSeconds >= 3600) {
-            $totalLabel = round($totalSeconds / 3600, 2) . 'h';
-        } else {
-            $totalLabel = round($totalSeconds / 60, 1) . 'm';
-        }
+        $totalLabel = $totalSeconds >= 3600
+            ? round($totalSeconds / 3600, 2) . 'h'
+            : round($totalSeconds / 60, 1) . 'm';
 
         return [
-            'labels' => $labels,
+            'labels' => $chartData['labels'],
             'data' => $data,
-            'yLabel' => $yLabel,
-            'yMax' => $yMax,
-            'xLabel' => $xLabel,
-            'unit' => $unit,
+            'yLabel' => 'Hours',
+            'yMax' => $this->getDowntimeYMax($this->downtimeFilter),
+            'xLabel' => $chartData['xLabel'],
+            'unit' => 'hours',
             'totalHours' => $totalLabel,
-            'filter' => $this->downtimeFilter,
-            'downSites' => $this->getDownSitesPerBucket($labels),
         ];
     }
 
     /**
-     * Get list of down sites per time bucket for the overview downtime chart tooltip.
-     * Uses a single query to fetch all down check results, then groups by bucket.
+     * Get chart data from the appropriate rollup table based on filter.
+     *
+     * Filter mapping:
+     * - 1D: hourly_stats (24 points)
+     * - 3D: hourly_stats grouped by 6h (12 points)
+     * - 7D: daily_stats (7 points)
+     * - 1M: weekly_stats (4 points)
+     * - 3M: weekly_stats (13 points)
+     * - 6M: monthly_stats (6 points)
+     * - 1Y: monthly_stats (12 points)
      */
-    private function getDownSitesPerBucket(array $labels): array
+    private function getChartDataFromRollup(string $filter, ?int $siteId, string $metric): array
     {
         $now = Carbon::now();
-        $siteNames = Site::pluck('name', 'id')->toArray();
 
-        // Rebuild the same buckets based on the filter
-        $buckets = [];
-        switch ($this->downtimeFilter) {
+        switch ($filter) {
             case '1D':
-                $start = $now->copy()->startOfHour()->subHours(23);
-                for ($i = 0; $i < 24; $i++) {
-                    $buckets[] = [$start->copy()->addHours($i), $start->copy()->addHours($i + 1)];
-                }
-                break;
+                return $this->getHourlyChartData($now->copy()->startOfHour()->subHours(23), 24, $siteId, $metric);
+
             case '3D':
-                $start = $now->copy()->startOfDay()->subDays(2);
-                for ($i = 0; $i < 12; $i++) {
-                    $buckets[] = [$start->copy()->addHours($i * 6), $start->copy()->addHours(($i + 1) * 6)];
-                }
-                break;
+                return $this->get6HourChartData($now->copy()->startOfDay()->subDays(2), 12, $siteId, $metric);
+
             case '7D':
-                for ($i = 6; $i >= 0; $i--) {
-                    $buckets[] = [$now->copy()->subDays($i)->startOfDay(), $now->copy()->subDays($i)->endOfDay()];
-                }
-                break;
+                return $this->getDailyChartData(7, $siteId, $metric);
+
             case '1M':
-                for ($i = 29; $i >= 0; $i--) {
-                    $buckets[] = [$now->copy()->subDays($i)->startOfDay(), $now->copy()->subDays($i)->endOfDay()];
-                }
-                break;
+                return $this->getWeeklyChartData(4, $siteId, $metric);
+
             case '3M':
-                for ($i = 12; $i >= 0; $i--) {
-                    $buckets[] = [$now->copy()->subWeeks($i)->startOfWeek(), $now->copy()->subWeeks($i)->endOfWeek()];
-                }
-                break;
+                return $this->getWeeklyChartData(13, $siteId, $metric);
+
             case '6M':
-                for ($i = 25; $i >= 0; $i--) {
-                    $buckets[] = [$now->copy()->subWeeks($i)->startOfWeek(), $now->copy()->subWeeks($i)->endOfWeek()];
-                }
-                break;
+                return $this->getMonthlyChartData(6, $siteId, $metric);
+
             case '1Y':
-                for ($i = 11; $i >= 0; $i--) {
-                    $buckets[] = [$now->copy()->subMonths($i)->startOfMonth(), $now->copy()->subMonths($i)->endOfMonth()];
-                }
-                break;
+                return $this->getMonthlyChartData(12, $siteId, $metric);
+
             default:
-                for ($i = 29; $i >= 0; $i--) {
-                    $buckets[] = [$now->copy()->subDays($i)->startOfDay(), $now->copy()->subDays($i)->endOfDay()];
-                }
-                break;
+                return $this->getHourlyChartData($now->copy()->startOfHour()->subHours(23), 24, $siteId, $metric);
         }
-
-        // Single query: fetch all down results across the entire time range
-        $overallStart = $buckets[0][0];
-        $overallEnd = end($buckets)[1];
-
-        $query = CheckResult::where('checked_at', '>=', $overallStart)
-            ->where('checked_at', '<', $overallEnd)
-            ->whereRaw('(http_code = 0 OR http_code < 200 OR http_code >= 400)')
-            ->select('site_id', 'checked_at');
-
-        if ($this->overviewSiteFilter) {
-            $query->where('site_id', $this->overviewSiteFilter);
-        }
-
-        $allDownResults = $query->get();
-
-        // Group into buckets
-        $downSites = [];
-        foreach ($buckets as [$bucketStart, $bucketEnd]) {
-            $bucketStartTs = $bucketStart->timestamp;
-            $bucketEndTs = $bucketEnd->timestamp;
-
-            $siteIdsInBucket = $allDownResults
-                ->filter(fn($r) => Carbon::parse($r->checked_at)->timestamp >= $bucketStartTs
-                    && Carbon::parse($r->checked_at)->timestamp < $bucketEndTs)
-                ->pluck('site_id')
-                ->unique()
-                ->toArray();
-
-            $names = array_values(array_intersect_key($siteNames, array_flip($siteIdsInBucket)));
-            $downSites[] = $names;
-        }
-
-        return $downSites;
     }
 
     /**
-     * Calculate downtime seconds within a time bucket using cycle-based outage detection.
+     * Get data from hourly_stats table.
      */
-    private function getDowntimeSeconds(Carbon $start, Carbon $end): int
+    private function getHourlyChartData(Carbon $start, int $points, ?int $siteId, string $metric): array
     {
-        $query = CheckResult::where('checked_at', '>=', $start)
-            ->where('checked_at', '<', $end);
+        $labels = [];
+        $data = [];
 
-        if ($this->overviewSiteFilter) {
-            $query->where('site_id', $this->overviewSiteFilter);
-        }
+        for ($i = 0; $i < $points; $i++) {
+            $periodStart = $start->copy()->addHours($i);
+            $labels[] = $periodStart->format('H:00');
 
-        $results = $query->orderBy('checked_at')->select('cycle_id', 'http_code', 'checked_at')->get();
+            $query = \App\Models\HourlyStat::where('period_start', $periodStart);
+            if ($siteId) {
+                $query->where('site_id', $siteId);
+            }
 
-        if ($results->isEmpty()) {
-            return 0;
-        }
-
-        // Group by cycle, determine down/up per cycle
-        $cycles = $results->groupBy('cycle_id');
-        $cycleTimestamps = [];
-
-        foreach ($cycles as $cycleId => $cycleResults) {
-            $someDown = $cycleResults->contains(function ($result) {
-                $code = $result->http_code;
-                return $code === 0 || $code < 200 || $code >= 400;
-            });
-
-            $cycleTimestamps[] = [
-                'time' => Carbon::parse($cycleResults->first()->checked_at),
-                'down' => $someDown,
-            ];
-        }
-
-        usort($cycleTimestamps, fn($a, $b) => $a['time']->timestamp - $b['time']->timestamp);
-
-        // Measure outage windows
-        $downtimeSeconds = 0;
-        $outageStart = null;
-
-        for ($j = 0; $j < count($cycleTimestamps); $j++) {
-            $current = $cycleTimestamps[$j];
-
-            if ($current['down'] && $outageStart === null) {
-                $outageStart = $current['time'];
-            } elseif (!$current['down'] && $outageStart !== null) {
-                $downtimeSeconds += $outageStart->diffInSeconds($current['time']);
-                $outageStart = null;
+            if ($metric === 'avg_response_time_ms') {
+                $records = $query->get();
+                if ($records->isEmpty()) {
+                    $data[] = null;
+                } else {
+                    $totalChecks = $records->sum('checks_count');
+                    $weighted = $records->sum(fn($r) => $r->avg_response_time_ms * $r->checks_count);
+                    $data[] = $totalChecks > 0 ? round($weighted / $totalChecks / 1000, 3) : null;
+                }
+            } else {
+                // downtime_seconds: sum across all sites or single site
+                $val = $query->sum($metric);
+                $data[] = $val ?: 0;
             }
         }
 
-        // If still in outage at end of bucket
-        if ($outageStart !== null) {
-            $closeTime = Carbon::now()->lt($end) ? Carbon::now() : $end;
-            $downtimeSeconds += $outageStart->diffInSeconds($closeTime);
+        return ['labels' => $labels, 'data' => $data, 'xLabel' => 'Hours'];
+    }
+
+    /**
+     * Get data from hourly_stats table grouped by 6-hour intervals.
+     */
+    private function get6HourChartData(Carbon $start, int $points, ?int $siteId, string $metric): array
+    {
+        $labels = [];
+        $data = [];
+
+        for ($i = 0; $i < $points; $i++) {
+            $bucketStart = $start->copy()->addHours($i * 6);
+            $bucketEnd = $bucketStart->copy()->addHours(6);
+            $labels[] = $bucketStart->format('M d H:00');
+
+            $query = \App\Models\HourlyStat::where('period_start', '>=', $bucketStart)
+                ->where('period_start', '<', $bucketEnd);
+            if ($siteId) {
+                $query->where('site_id', $siteId);
+            }
+
+            if ($metric === 'avg_response_time_ms') {
+                $records = $query->get();
+                if ($records->isEmpty()) {
+                    $data[] = null;
+                } else {
+                    $totalChecks = $records->sum('checks_count');
+                    $weighted = $records->sum(fn($r) => $r->avg_response_time_ms * $r->checks_count);
+                    $data[] = $totalChecks > 0 ? round($weighted / $totalChecks / 1000, 3) : null;
+                }
+            } else {
+                $val = $query->sum($metric);
+                $data[] = $val ?: 0;
+            }
         }
 
-        return $downtimeSeconds;
+        return ['labels' => $labels, 'data' => $data, 'xLabel' => '6-Hour Intervals'];
+    }
+
+    /**
+     * Get data from daily_stats table.
+     */
+    private function getDailyChartData(int $days, ?int $siteId, string $metric): array
+    {
+        $now = Carbon::now();
+        $labels = [];
+        $data = [];
+
+        for ($i = $days - 1; $i >= 0; $i--) {
+            $date = $now->copy()->subDays($i)->startOfDay();
+            $labels[] = $date->format('M d');
+
+            $query = \App\Models\DailyStat::where('period_start', $date->toDateString());
+            if ($siteId) {
+                $query->where('site_id', $siteId);
+            }
+
+            if ($metric === 'avg_response_time_ms') {
+                $records = $query->get();
+                if ($records->isEmpty()) {
+                    $data[] = null;
+                } else {
+                    $totalChecks = $records->sum('checks_count');
+                    $weighted = $records->sum(fn($r) => $r->avg_response_time_ms * $r->checks_count);
+                    $data[] = $totalChecks > 0 ? round($weighted / $totalChecks / 1000, 3) : null;
+                }
+            } else {
+                $val = $query->sum($metric);
+                $data[] = $val ?: 0;
+            }
+        }
+
+        return ['labels' => $labels, 'data' => $data, 'xLabel' => 'Days'];
+    }
+
+    /**
+     * Get data from weekly_stats table.
+     */
+    private function getWeeklyChartData(int $weeks, ?int $siteId, string $metric): array
+    {
+        $now = Carbon::now();
+        $labels = [];
+        $data = [];
+
+        for ($i = $weeks - 1; $i >= 0; $i--) {
+            $weekStart = $now->copy()->subWeeks($i)->startOfWeek();
+            $labels[] = $weekStart->format('M d');
+
+            $query = \App\Models\WeeklyStat::where('period_start', $weekStart->toDateString());
+            if ($siteId) {
+                $query->where('site_id', $siteId);
+            }
+
+            if ($metric === 'avg_response_time_ms') {
+                $records = $query->get();
+                if ($records->isEmpty()) {
+                    $data[] = null;
+                } else {
+                    $totalChecks = $records->sum('checks_count');
+                    $weighted = $records->sum(fn($r) => $r->avg_response_time_ms * $r->checks_count);
+                    $data[] = $totalChecks > 0 ? round($weighted / $totalChecks / 1000, 3) : null;
+                }
+            } else {
+                $val = $query->sum($metric);
+                $data[] = $val ?: 0;
+            }
+        }
+
+        return ['labels' => $labels, 'data' => $data, 'xLabel' => 'Weeks'];
+    }
+
+    /**
+     * Get data from monthly_stats table.
+     */
+    private function getMonthlyChartData(int $months, ?int $siteId, string $metric): array
+    {
+        $now = Carbon::now();
+        $labels = [];
+        $data = [];
+
+        for ($i = $months - 1; $i >= 0; $i--) {
+            $monthStart = $now->copy()->subMonths($i)->startOfMonth();
+            $labels[] = $monthStart->format('M Y');
+
+            $query = \App\Models\MonthlyStat::where('period_start', $monthStart->toDateString());
+            if ($siteId) {
+                $query->where('site_id', $siteId);
+            }
+
+            if ($metric === 'avg_response_time_ms') {
+                $records = $query->get();
+                if ($records->isEmpty()) {
+                    $data[] = null;
+                } else {
+                    $totalChecks = $records->sum('checks_count');
+                    $weighted = $records->sum(fn($r) => $r->avg_response_time_ms * $r->checks_count);
+                    $data[] = $totalChecks > 0 ? round($weighted / $totalChecks / 1000, 3) : null;
+                }
+            } else {
+                $val = $query->sum($metric);
+                $data[] = $val ?: 0;
+            }
+        }
+
+        return ['labels' => $labels, 'data' => $data, 'xLabel' => 'Months'];
+    }
+
+    /**
+     * Get the yMax value for downtime chart based on filter.
+     * Returns null to let Chart.js auto-scale from the highest data point.
+     */
+    private function getDowntimeYMax(string $filter): ?int
+    {
+        return null;
     }
 
     public function render(): View
@@ -1344,14 +901,14 @@ class Dashboard extends Component
                     ->groupBy('site_id')
                     ->pluck('avg_ms', 'site_id');
 
-                // Batch latest HTTP codes (get the most recent check per site)
-                $latestCodes = CheckResult::whereIn('site_id', $siteIds)
-                    ->whereIn('id', function ($query) use ($siteIds) {
-                        $query->selectRaw('MAX(id)')
-                            ->from('check_results')
-                            ->whereIn('site_id', $siteIds)
-                            ->groupBy('site_id');
-                    })
+                // Batch latest HTTP codes (get the most recent check per site). Inlined integers let MySQL
+                // jump straight to MAX(id) per site; bound parameters make it read every row of those sites.
+                $latestIds = CheckResult::selectRaw('MAX(id) AS id')
+                    ->whereIntegerInRaw('site_id', $siteIds)
+                    ->groupBy('site_id')
+                    ->pluck('id');
+
+                $latestCodes = CheckResult::whereIn('id', $latestIds)
                     ->pluck('http_code', 'site_id');
 
                 $metrics = [];
@@ -1369,9 +926,7 @@ class Dashboard extends Component
             'sites' => $sites,
             'categories' => $categories,
             'siteMetrics' => $siteMetrics,
-            'allSites' => Site::orderBy('name')->get(['id', 'name', 'base_url']),
             'overviewChartData' => $this->overviewChartData,
-            'overviewSiteInfo' => $this->overviewSiteFilter ? Site::find($this->overviewSiteFilter, ['name', 'base_url']) : null,
         ]);
     }
 

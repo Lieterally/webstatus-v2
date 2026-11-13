@@ -11,6 +11,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Site extends Model
 {
     use HasFactory;
+
+    protected $attributes = [
+        'is_monitored' => true,
+    ];
+
     protected $fillable = [
         'name',
         'category_id',
@@ -18,6 +23,7 @@ class Site extends Model
         'description',
         'responsible_person_id',
         'status',
+        'is_monitored',
         'consecutive_down_count',
         'first_down_at',
         'notification_sent',
@@ -29,6 +35,7 @@ class Site extends Model
     {
         return [
             'status' => SiteStatus::class,
+            'is_monitored' => 'boolean',
             'first_down_at' => 'datetime',
             'notification_sent' => 'boolean',
         ];

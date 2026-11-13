@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\DowntimeController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\CategoryController;
@@ -58,6 +59,9 @@ Route::middleware(['auth', 'role:admin'])->group(function () {
     Route::get('/dashboard', function () {
         return view('dashboard');
     })->name('dashboard');
+
+    // Downtime Details
+    Route::get('/downtime', [DowntimeController::class, 'index'])->name('downtime.index');
 
     // Website Manager - accessible by both Admin and Super_Admin
     Route::resource('sites', SiteController::class)->except(['show']);

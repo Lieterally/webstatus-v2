@@ -70,7 +70,12 @@
                     <tbody>
                         @forelse($sites as $site)
                             <tr class="hover">
-                                <td class="font-medium">{{ $site->name }}</td>
+                                <td class="font-medium">
+                                    {{ $site->name }}
+                                    @unless ($site->is_monitored)
+                                        <span class="badge badge-ghost badge-sm ml-1">Not Monitored</span>
+                                    @endunless
+                                </td>
                                 <td>{{ $site->category->name }}</td>
                                 <td>
                                     <a href="{{ $site->base_url }}" target="_blank"

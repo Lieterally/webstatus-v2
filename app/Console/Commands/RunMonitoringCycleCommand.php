@@ -42,6 +42,12 @@ class RunMonitoringCycleCommand extends Command
      */
     public function handle(): int
     {
+        if (!SystemConfig::isMonitoringEnabled()) {
+            $this->info('Monitoring is turned off. Skipping cycle.');
+
+            return self::SUCCESS;
+        }
+
         $this->info('Starting monitoring cycle...');
 
         try {

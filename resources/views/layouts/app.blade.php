@@ -129,6 +129,15 @@
                         </a>
                     </li>
 
+                    {{-- Downtime Details --}}
+                    <li>
+                        <a href="{{ route('downtime.index') }}"
+                            class="{{ request()->routeIs('downtime.*') ? 'active' : '' }}">
+                            <i class="fa-regular fa-triangle-exclamation fa-lg fa-fw"></i>
+                            Downtime Details
+                        </a>
+                    </li>
+
                     {{-- Website Manager --}}
                     <li>
                         <a href="{{ route('sites.index') }}"

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\DTOs\SiteCheckResult;
 use App\Enums\SiteStatus;
+use App\Models\DowntimeHistory;
 use App\Models\NotificationLog;
 use App\Models\Site;
 use App\Models\SystemConfig;
@@ -44,6 +45,10 @@ class NotificationService implements NotificationServiceInterface
      */
     public function evaluateAndNotify(Collection $siteResults): void
     {
+        // Reconciliation guard: close any active downtime records for sites that are
+        // currently marked as Up in the database (handles crashes/reboots mid-outage)
+        $this->reconcileStaleActiveRecords();
+
         $initialAlertTriggered = false;
         $recoveryTriggered = false;
 
@@ -73,8 +78,8 @@ class NotificationService implements NotificationServiceInterface
 
         // If a recovery happened but there are still other down sites, send a consolidated update
         if ($recoveryTriggered) {
-            $downSitesExist = Site::where('status', SiteStatus::PartiallyDown)
-                ->orWhere('status', SiteStatus::TotallyDown)
+            $downSitesExist = Site::where('is_monitored', true)
+                ->whereIn('status', [SiteStatus::PartiallyDown, SiteStatus::TotallyDown])
                 ->exists();
 
             // Don't send consolidated if all sites are now up (recovery message was already sent)
@@ -86,6 +91,7 @@ class NotificationService implements NotificationServiceInterface
 
         // Check global repeat timer: if any sites are still down with notification_sent=true
         $sitesWithActiveNotification = Site::where('notification_sent', true)
+            ->where('is_monitored', true)
             ->where(function ($q) {
                 $q->where('status', SiteStatus::PartiallyDown)
                     ->orWhere('status', SiteStatus::TotallyDown);
@@ -112,6 +118,7 @@ class NotificationService implements NotificationServiceInterface
             $q->where('status', SiteStatus::PartiallyDown)
                 ->orWhere('status', SiteStatus::TotallyDown);
         })
+            ->where('is_monitored', true)
             ->whereNotNull('first_down_at')
             ->orderBy('first_down_at')
             ->get();
@@ -223,6 +230,26 @@ class NotificationService implements NotificationServiceInterface
     }
 
     /**
+     * Close any active downtime records for sites that are currently Up.
+     * Guards against orphaned records caused by crashes or server reboots mid-outage.
+     */
+    private function reconcileStaleActiveRecords(): void
+    {
+        $staleRecords = DowntimeHistory::where('status', 'active')
+            ->whereHas('site', fn($q) => $q->where('status', SiteStatus::Up))
+            ->get();
+
+        foreach ($staleRecords as $record) {
+            $endedAt = now();
+            $record->update([
+                'ended_at' => $endedAt,
+                'duration_seconds' => (int) $record->started_at->diffInSeconds($endedAt),
+                'status' => 'resolved',
+            ]);
+        }
+    }
+
+    /**
      * Evaluate a single site for notification conditions.
      *
      * @return string|null 'send_down' (initial alert), 'send_recovery', or null
@@ -241,7 +268,7 @@ class NotificationService implements NotificationServiceInterface
         }
 
         // Site is down (partially or totally)
-        return $this->handleDownState($site, $currentStatus);
+        return $this->handleDownState($site, $currentStatus, $siteResult);
     }
 
     /**
@@ -260,6 +287,22 @@ class NotificationService implements NotificationServiceInterface
             $downDuration = $this->calculateDownDuration($site);
             $this->sendRecoveryNotification($site, $downDuration);
             $shouldNotify = true;
+        }
+
+        // Close any active downtime history record for this site
+        if ($this->isDownStatus($previousStatus)) {
+            $activeRecord = DowntimeHistory::where('site_id', $site->id)
+                ->where('status', 'active')
+                ->first();
+
+            if ($activeRecord) {
+                $endedAt = now();
+                $activeRecord->update([
+                    'ended_at' => $endedAt,
+                    'duration_seconds' => (int) $activeRecord->started_at->diffInSeconds($endedAt),
+                    'status' => 'resolved',
+                ]);
+            }
         }
 
         // Reset all counters on recovery
@@ -282,7 +325,7 @@ class NotificationService implements NotificationServiceInterface
      *
      * @return string|null 'send_down' if initial alert should be sent
      */
-    private function handleDownState(Site $site, SiteStatus $currentStatus): ?string
+    private function handleDownState(Site $site, SiteStatus $currentStatus, SiteCheckResult $siteResult): ?string
     {
         $consecutiveDownCount = $site->consecutive_down_count + 1;
         $notificationSent = $site->notification_sent;
@@ -294,6 +337,37 @@ class NotificationService implements NotificationServiceInterface
         if ($consecutiveDownCount === self::FALSE_POSITIVE_THRESHOLD && !$notificationSent) {
             $notificationSent = true;
             $shouldNotify = true;
+        }
+
+        // Get the currently down page paths
+        $downPagePaths = $siteResult->pageResults
+            ->filter(fn($r) => !$r->isReachable())
+            ->map(fn($r) => parse_url($r->url, PHP_URL_PATH) ?: '/')
+            ->unique()
+            ->values()
+            ->toArray();
+
+        // Create or update the downtime history record
+        $existingRecord = DowntimeHistory::where('site_id', $site->id)
+            ->where('status', 'active')
+            ->first();
+
+        if ($existingRecord) {
+            // Merge newly affected pages into existing record
+            $mergedPages = array_values(array_unique(
+                array_merge($existingRecord->affected_pages, $downPagePaths)
+            ));
+            $existingRecord->update(['affected_pages' => $mergedPages]);
+        } else {
+            // First down cycle for this outage — create new record
+            DowntimeHistory::create([
+                'site_id' => $site->id,
+                'started_at' => $firstDownAt,
+                'ended_at' => null,
+                'duration_seconds' => null,
+                'affected_pages' => $downPagePaths,
+                'status' => 'active',
+            ]);
         }
 
         // Update site state
