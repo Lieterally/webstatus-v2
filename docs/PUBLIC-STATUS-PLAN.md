@@ -17,7 +17,7 @@ Status: **built** on branch `feature/public-status`. D4 is English (user's choic
 | D5 | Brand moment | No ornaments (project override), or one ornament band | The brand book allows one ornament on public pages; the override bans them for webstatus. Recommendation: keep the override (no ornament), use the full logo lockup in a `SiteHeader`. |
 | D6 | Response times | Show average response time per site, or not | Not in v1. It invites "slow" complaints and isn't what readers need. |
 | D7 | Partial outages | Count "partially down" as downtime in the uptime %, or not | Keep today's rule (any page down = downtime for that cycle), and label those days "Gangguan sebagian" / "Partial outage" in the tooltip. Changing the rule changes the admin charts too. |
-| D8 | History length | 30 or 90 days of uptime bars | 90 days on desktop, 30 on phones (bars stay ≥ 3px wide). |
+| D8 | History length | 30 or 90 days of uptime bars | **Changed: 30 days everywhere** (user's choice, same as status.supabase.com). |
 
 ---
 
@@ -35,7 +35,7 @@ From top to bottom:
 3. **Sites grouped by category** (Akademik, Non-Akademik, Others), in `Card`s. Each row:
    - public name, and the base URL host as a link (opens in a new tab);
    - status badge with icon and word (`x-itk.status-badge`);
-   - 90-day uptime bars, and the uptime % for the period.
+   - 30-day uptime bars, and the uptime % for the 30 days.
    - Categories collapse (`Collapsible`) on phones; a category with any site down starts open.
 4. **Ongoing and past incidents** (`Trace`), last 14 days, newest first:
    - "Gangguan pada {site}" / "Outage on {site}", started 12 Nov 2026 10.12 WITA, resolved 10.40 WITA, duration 28 min, number of affected pages (not the paths).
@@ -84,7 +84,7 @@ Small and separate from the views (the "front end only" migration rule does not 
 
 1. **Migration** `add_public_fields_to_sites_table`: `is_public` (bool, default false, indexed), `public_name` (nullable string 100).
 2. **Site form** (`sites/_form.blade.php`, `SiteController` validation): "Tampilkan di halaman status publik" / "Show on the public status page" checkbox and "Nama publik (opsional)" field.
-3. **`PublicStatusService`** builds one array for the page: banner state, last check, categories → sites → 90 daily points + uptime %, incidents (14 days). Only `is_public && is_monitored` sites.
+3. **`PublicStatusService`** builds one array for the page: banner state, last check, categories → sites → 30 daily points + uptime %, incidents (14 days). Only `is_public && is_monitored` sites.
 4. **Caching**: `Cache::remember('public-status', 60s, …)`, and `Cache::forget('public-status')` at the end of a monitoring cycle (after `updateAllCurrentStats()` in `MonitoringService`). The page is read during outages, when traffic spikes; it must not hit `check_results`.
 5. **Route** (D1): `Route::get('/', PublicStatusController::class)->name('status')` with `throttle:120,1`, outside the `auth` group. `/login` unchanged. Response header `Cache-Control: public, max-age=60`.
 6. **JSON** (optional, same cache): `GET /status.json` with the same data, for a future campus app or widget.
@@ -100,7 +100,7 @@ No Livewire on the public page: it is a plain Blade page that re-fetches itself 
 - Build from the design system (port from `design-system/reference/`): `x-itk.site-header` (SiteHeader, with the menu sheet below 1024px), `x-itk.trace` (Trace), `x-itk.collapsible` (Collapsible).
 - **One component the design system does not have:** `x-itk.uptime-bars`. It is built only from tokens and existing patterns (Tooltip for each day, Badge words, Chart's rule of a hidden data table). This is flagged as a custom component; nothing else is invented.
 - Accessibility:
-  - each bar is a focusable button with a tooltip ("12 Nov 2026 · 99,2% · 1 gangguan, 11 menit"), and the whole row has a screen-reader table of the 90 days;
+  - each bar is a focusable button with a tooltip ("12 Nov 2026 · 99,2% · 1 gangguan, 11 menit"), and the whole row has a screen-reader table of the 30 days;
   - status is always icon + word; bar colours are never the only signal;
   - every target ≥ 44px on touch (on phones the bars are one tap target per week that opens a short list, or the bars hide and the 30-day % shows instead);
   - light and dark themes; `prefers-reduced-motion` respected.

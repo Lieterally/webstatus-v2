@@ -65,10 +65,7 @@
             <section aria-labelledby="websites-heading" class="mb-10">
                 <div class="flex flex-wrap items-end justify-between gap-3 mb-3">
                     <h2 id="websites-heading" class="text-title-2 text-ink">Websites</h2>
-                    <p class="text-footnote text-ink-muted">
-                        <span class="max-sm:hidden">Uptime over the last {{ $status['history_days'] }} days</span>
-                        <span class="sm:hidden">Uptime over the last 30 days</span>
-                    </p>
+                    <p class="text-footnote text-ink-muted">Uptime over the last {{ $status['history_days'] }} days</p>
                 </div>
 
                 <div class="grid gap-4">
@@ -87,12 +84,6 @@
                             <ul class="grid pb-2">
                                 @foreach ($category['sites'] as $site)
                                     @php
-                                        $days = $site['days'];
-                                        $last30 = array_slice($days, -30);
-                                        $observed30 = array_filter($last30, fn ($d) => $d['uptime'] !== null);
-                                        $uptime30 = count($observed30)
-                                            ? round(array_sum(array_column($observed30, 'uptime')) / count($observed30), 2)
-                                            : null;
                                         $fmt = fn ($v) => $v === null ? 'No data' : rtrim(rtrim(number_format($v, 2), '0'), '.') . '%';
                                     @endphp
                                     <li class="grid gap-3 py-4 border-t border-line">
@@ -106,17 +97,14 @@
                                             </div>
                                             <div class="flex items-center gap-3">
                                                 <span class="text-callout text-ink tabular-nums">
-                                                    <span class="max-sm:hidden">{{ $fmt($site['uptime']) }}</span>
-                                                    <span class="sm:hidden">{{ $fmt($uptime30) }}</span>
-                                                    <span class="sr-only"> uptime</span>
+                                                    {{ $fmt($site['uptime']) }}<span class="sr-only"> uptime</span>
                                                 </span>
                                                 <x-itk.status-badge :status="$site['status']" />
                                             </div>
                                         </div>
-                                        <x-itk.uptime-bars :days="$days" :label="$site['name']" :id="'uptime-' . $site['id']" />
+                                        <x-itk.uptime-bars :days="$site['days']" :label="$site['name']" :id="'uptime-' . $site['id']" />
                                         <div class="flex justify-between text-footnote text-ink-muted" aria-hidden="true">
-                                            <span class="max-sm:hidden">{{ $status['history_days'] }} days ago</span>
-                                            <span class="sm:hidden">30 days ago</span>
+                                            <span>{{ $status['history_days'] }} days ago</span>
                                             <span>Today</span>
                                         </div>
                                     </li>

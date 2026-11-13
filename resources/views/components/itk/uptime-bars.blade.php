@@ -8,7 +8,6 @@
     Keyboard: the row is one tab stop; Left/Right move between days, Home/End jump, Esc hides the
     tooltip. Colour is never the only signal: the tooltip states each day in words, and screen
     readers get a summary that lists every day below 100%.
-    Below 640px only the last 30 days are drawn.
 --}}
 @props(['days' => [], 'label', 'id'])
 
@@ -16,7 +15,6 @@
     $toneClass = ['ok' => 'bg-success', 'minor' => 'bg-warning', 'major' => 'bg-error', 'none' => 'bg-line'];
     $toneWord = ['ok' => 'No downtime', 'minor' => 'Brief downtime', 'major' => 'Downtime', 'none' => 'No data'];
     $count = count($days);
-    $mobileFrom = max(0, $count - 30);
 
     $describe = function (array $d) use ($toneWord): string {
         if ($d['uptime'] === null) {
@@ -47,8 +45,7 @@
     x-data="{
         points: @js($points),
         active: null,
-        mobileFrom: {{ $mobileFrom }},
-        first() { return window.matchMedia('(min-width: 640px)').matches ? 0 : this.mobileFrom },
+        first() { return 0 },
         move(step) {
             const last = this.points.length - 1;
             const start = this.active === null ? last : this.active + step;
@@ -81,7 +78,6 @@
                 @class([
                     'flex-1 min-w-0.5 rounded-xs',
                     $toneClass[$day['tone']],
-                    'max-sm:hidden' => $i < $mobileFrom,
                 ])></span>
         @endforeach
     </div>

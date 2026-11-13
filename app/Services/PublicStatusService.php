@@ -24,7 +24,7 @@ class PublicStatusService
 
     public const CACHE_SECONDS = 60;
 
-    public const HISTORY_DAYS = 90;
+    public const HISTORY_DAYS = 30;
 
     public const INCIDENT_DAYS = 14;
 
