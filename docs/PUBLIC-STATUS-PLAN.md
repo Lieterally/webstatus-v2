@@ -2,7 +2,7 @@
 
 A public page, in the style of status.supabase.com, where students, staff and visitors can see whether ITK websites are working without logging in. It is built from data webstatus already collects and from the ITK Design System.
 
-Status: **decided, being built** on branch `feature/public-status`. D4 is English (user's choice); every other decision follows the recommendation. Indonesian strings in this plan are replaced by their English versions in the build.
+Status: **built** on branch `feature/public-status`. D4 is English (user's choice); every other decision follows the recommendation, with two changes made while building: the rate limit is 600 requests/minute (campus networks share one IP), and `/status.json` keeps the session (the app's SessionTimeout middleware needs it), so it is browser-cacheable (`private, max-age=60`) rather than publicly cacheable.
 
 ---
 
