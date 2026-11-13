@@ -471,10 +471,10 @@
                     <tbody>
                         @forelse($siteData['pageResults'] as $pageResult)
                             <tr>
-                                <td class="min-w-60">
+                                <td>
                                     <span class="block text-ink">{{ $pageResult['path'] }}</span>
                                     <a href="{{ $pageResult['full_url'] }}" target="_blank" rel="noopener noreferrer"
-                                        class="text-footnote text-link hover:underline underline-offset-3 break-all">
+                                        class="text-footnote text-link hover:underline underline-offset-3">
                                         {{ $pageResult['full_url'] }}<span class="sr-only"> (opens in a new tab)</span>
                                     </a>
                                 </td>

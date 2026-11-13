@@ -1,187 +1,129 @@
 @extends('layouts.app')
 
-@section('title', 'Website Manager')
+@section('title', 'Website manager')
 
 @section('content')
-    <div class="flex items-center justify-between mb-6">
-        <div>
-            <h1 class="text-2xl font-bold text-base-content">Website Manager</h1>
-            <p class="text-sm text-base-content/60 mt-1">Manage monitored websites and their pages</p>
+    <x-itk.page-header title="Website manager" description="Manage monitored websites and their pages.">
+        <x-slot:actions>
+            <x-itk.button variant="secondary" :href="route('categories.index')" icon="folder">Manage categories</x-itk.button>
+            <x-itk.button :href="route('sites.create')" icon="plus">Add website</x-itk.button>
+        </x-slot:actions>
+    </x-itk.page-header>
+
+    {{-- Search and filters --}}
+    <form method="GET" action="{{ route('sites.index') }}" role="search" aria-label="Filter websites"
+        class="flex flex-wrap items-center gap-3 mb-4">
+        <div class="relative w-full sm:w-64">
+            <x-itk.icon name="search" class="pointer-events-none absolute left-3 top-3 text-ink-muted" />
+            <x-itk.input type="search" name="search" :value="request('search')" aria-label="Search by website name"
+                placeholder="Search by name" class="pl-10" />
         </div>
-        <a href="{{ route('sites.create') }}" class="btn btn-primary">
-            Add Site
-        </a>
-    </div>
 
-    {{-- Search & Filters --}}
-    <div class="card bg-base-100 shadow-sm mb-4">
-        <div class="card-body py-3">
-            <form method="GET" action="{{ route('sites.index') }}" class="flex flex-wrap items-center gap-3">
-                {{-- Search --}}
-                <label class="input input-sm input-bordered flex items-center gap-2 w-auto sm:w-64">
-                    <i class="fa-solid fa-magnifying-glass"></i>
-                    <input type="text" name="search" value="{{ request('search') }}" placeholder="Search site name..."
-                        class="grow">
-                </label>
+        <x-itk.select name="category" aria-label="Filter by category" class="w-full sm:w-auto">
+            <option value="">All categories</option>
+            @foreach ($categories as $category)
+                <option value="{{ $category->id }}" @selected(request('category') == $category->id)>{{ $category->name }}</option>
+            @endforeach
+        </x-itk.select>
 
-                {{-- Category Filter --}}
-                <select name="category" class="select select-sm select-bordered w-auto sm:w-auto">
-                    <option value="">All Categories</option>
-                    @foreach ($categories as $category)
-                        <option value="{{ $category->id }}" {{ request('category') == $category->id ? 'selected' : '' }}>
-                            {{ $category->name }}
-                        </option>
-                    @endforeach
-                </select>
+        <x-itk.select name="person" aria-label="Filter by responsible person" class="w-full sm:w-auto">
+            <option value="">All responsible people</option>
+            @foreach ($staffMembers as $staff)
+                <option value="{{ $staff->id }}" @selected(request('person') == $staff->id)>{{ $staff->name }}</option>
+            @endforeach
+        </x-itk.select>
 
-                {{-- Responsible Person Filter --}}
-                <select name="person" class="select select-sm select-bordered w-auto sm:w-auto">
-                    <option value="">All Persons</option>
-                    @foreach ($staffMembers as $staff)
-                        <option value="{{ $staff->id }}" {{ request('person') == $staff->id ? 'selected' : '' }}>
-                            {{ $staff->name }}
-                        </option>
-                    @endforeach
-                </select>
+        <x-itk.button type="submit" variant="secondary" icon="list-filter">Apply filters</x-itk.button>
 
-                <button type="submit" class="btn btn-sm btn-primary">Filter</button>
+        @if (request('search') || request('category') || request('person'))
+            <x-itk.button variant="ghost" :href="route('sites.index')" icon="x">Clear filters</x-itk.button>
+        @endif
+    </form>
 
+    <div x-data="{ target: { name: '', url: '' }, confirmDelete(name, url) { this.target = { name, url }; $refs.confirmDialog.showModal(); } }">
+        @if ($sites->isEmpty())
+            <x-itk.card>
                 @if (request('search') || request('category') || request('person'))
-                    <a href="{{ route('sites.index') }}" class="btn btn-sm btn-ghost">Clear</a>
+                    <x-itk.empty title="No websites match these filters" icon="search">
+                        <x-slot:action>
+                            <x-itk.button variant="secondary" :href="route('sites.index')">Clear filters</x-itk.button>
+                        </x-slot:action>
+                        Try another name, category or responsible person.
+                    </x-itk.empty>
+                @else
+                    <x-itk.empty title="No websites yet" icon="globe">
+                        <x-slot:action>
+                            <x-itk.button :href="route('sites.create')" icon="plus">Add website</x-itk.button>
+                        </x-slot:action>
+                        Add the first website to start monitoring it.
+                    </x-itk.empty>
                 @endif
-            </form>
-        </div>
-    </div>
-
-    <div class="card bg-base-100 shadow-sm" x-data="deleteModal()">
-        <div class="card-body p-0">
-            <div class="overflow-x-auto">
-                <table class="table table-zebra">
-                    <thead>
+            </x-itk.card>
+        @else
+            <x-itk.table caption="Websites" hide-caption caption-id="websites-caption" class="shadow-1">
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">Category</th>
+                        <th scope="col">Base URL</th>
+                        <th scope="col" class="itk-num">Pages</th>
+                        <th scope="col">Responsible person</th>
+                        <th scope="col" class="itk-num"><span class="sr-only">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($sites as $site)
                         <tr>
-                            <th>Name</th>
-                            <th>Category</th>
-                            <th>Base URL</th>
-                            <th>Pages</th>
-                            <th>Responsible Person</th>
-                            <th class="text-right">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @forelse($sites as $site)
-                            <tr class="hover">
-                                <td class="font-medium">
+                            <th scope="row">
+                                <span class="flex flex-wrap items-center gap-2">
                                     {{ $site->name }}
                                     @unless ($site->is_monitored)
-                                        <span class="badge badge-ghost badge-sm ml-1">Not Monitored</span>
+                                        <x-itk.badge tone="neutral" icon="circle-pause">Not monitored</x-itk.badge>
                                     @endunless
-                                </td>
-                                <td>{{ $site->category->name }}</td>
-                                <td>
-                                    <a href="{{ $site->base_url }}" target="_blank"
-                                        class="link link-primary">{{ $site->base_url }}</a>
-                                </td>
-                                <td>
-                                    <div class="tooltip tooltip-right"
-                                        data-tip="{{ $site->pages->pluck('path')->join(', ') }}">
-                                        <span
-                                            class="cursor-help underline decoration-dotted">{{ $site->pages_count }}</span>
-                                    </div>
-                                </td>
-                                <td>{{ $site->responsiblePerson->name }}</td>
-                                <td class="text-right space-x-2">
-                                    <a href="{{ route('sites.edit', $site) }}" class="btn btn-ghost btn-sm">Edit</a>
-                                    <button type="button"
-                                        @click="openModal('{{ $site->name }}', '{{ route('sites.destroy', $site) }}')"
-                                        class="btn btn-error btn-sm btn-ghost">
-                                        Delete
+                                </span>
+                            </th>
+                            <td>{{ $site->category->name }}</td>
+                            <td>
+                                <a href="{{ $site->base_url }}" target="_blank" rel="noopener noreferrer"
+                                    class="text-link hover:underline underline-offset-3">
+                                    {{ $site->base_url }}<span class="sr-only"> (opens in a new tab)</span>
+                                </a>
+                            </td>
+                            <td class="itk-num">
+                                <x-itk.tooltip :id="'site-pages-' . $site->id" :content="$site->pages->pluck('path')->join(', ')">
+                                    <button type="button" aria-describedby="site-pages-{{ $site->id }}"
+                                        class="min-h-9 min-w-9 px-2 rounded-xs underline decoration-dotted underline-offset-3 cursor-help">
+                                        {{ $site->pages_count }}<span class="sr-only"> pages</span>
                                     </button>
-                                </td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td colspan="6" class="text-center text-base-content/60">No sites found.</td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
-                <div class="row p-4">
+                                </x-itk.tooltip>
+                            </td>
+                            <td>{{ $site->responsiblePerson->name }}</td>
+                            <td class="itk-num">
+                                <div class="inline-flex gap-2">
+                                    <x-itk.button variant="ghost" size="sm" icon="pencil" :href="route('sites.edit', $site)"
+                                        :aria-label="'Edit ' . $site->name">Edit</x-itk.button>
+                                    <x-itk.button variant="ghost" size="sm" icon="trash-2" class="text-error hover:bg-error-soft"
+                                        :aria-label="'Delete ' . $site->name"
+                                        x-on:click="confirmDelete({{ Js::from($site->name) }}, {{ Js::from(route('sites.destroy', $site)) }})">
+                                        Delete
+                                    </x-itk.button>
+                                </div>
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </x-itk.table>
+        @endif
 
-                    {{ $sites->links('vendor.pagination.daisy') }}
-                </div>
-
+        @if ($sites->hasPages())
+            <div class="mt-4">
+                {{ $sites->links('vendor.pagination.daisy') }}
             </div>
-        </div>
+        @endif
 
-        {{-- Delete Confirmation Modal --}}
-        <div x-show="showModal" x-cloak class="modal modal-open" x-transition:enter="transition ease-out duration-200"
-            x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-            x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100"
-            x-transition:leave-end="opacity-0">
-            {{-- Backdrop --}}
-            <div class="modal-backdrop" @click="closeModal()"></div>
-
-            {{-- Modal Content --}}
-            <div class="modal-box" x-transition:enter="transition ease-out duration-200"
-                x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
-                x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 scale-100"
-                x-transition:leave-end="opacity-0 scale-95" @keydown.escape.window="closeModal()">
-                <div class="flex items-start gap-4">
-                    {{-- Warning Icon --}}
-                    <div class="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-error/10">
-                        <svg class="w-5 h-5 text-error" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                        </svg>
-                    </div>
-
-                    <div class="flex-1">
-                        <h3 class="text-lg font-semibold text-base-content">Delete Site</h3>
-                        <p class="mt-2 text-sm text-base-content/70">
-                            Are you sure you want to delete <span class="font-medium text-base-content"
-                                x-text="siteName"></span>? This action cannot be undone. The site will be excluded from
-                            future checking cycles.
-                        </p>
-                    </div>
-                </div>
-
-                <div class="modal-action">
-                    <button type="button" @click="closeModal()" class="btn btn-ghost">
-                        Cancel
-                    </button>
-                    <form :action="deleteUrl" method="POST">
-                        @csrf
-                        @method('DELETE')
-                        <button type="submit" class="btn btn-error">
-                            Delete Site
-                        </button>
-                    </form>
-                </div>
-            </div>
-        </div>
+        <x-itk.alert-dialog action="target.url" confirm-label="Delete website" id="delete-site">
+            <x-slot:heading>Delete <span x-text="target.name"></span>?</x-slot:heading>
+            It is left out of future checking cycles. This cannot be undone.
+        </x-itk.alert-dialog>
     </div>
-
-
-
-    @push('scripts')
-        <script>
-            function deleteModal() {
-                return {
-                    showModal: false,
-                    siteName: '',
-                    deleteUrl: '',
-                    openModal(name, url) {
-                        this.siteName = name;
-                        this.deleteUrl = url;
-                        this.showModal = true;
-                    },
-                    closeModal() {
-                        this.showModal = false;
-                        this.siteName = '';
-                        this.deleteUrl = '';
-                    }
-                };
-            }
-        </script>
-    @endpush
 @endsection

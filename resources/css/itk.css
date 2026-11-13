@@ -36,7 +36,8 @@
 .itk-table caption { text-align: left; padding: var(--itk-space-3) var(--itk-space-4); font-weight: 600; font-size: 17px; line-height: 24px; }
 .itk-table thead th { text-align: left; font: 600 13px/18px var(--itk-font-sans); color: var(--itk-ink-muted); background: var(--itk-surface-sunken); padding: var(--itk-space-3) var(--itk-space-4); border-bottom: 1px solid var(--itk-border); white-space: nowrap; }
 .itk-table td, .itk-table tbody th { padding: var(--itk-space-3) var(--itk-space-4); border-bottom: 1px solid var(--itk-border); vertical-align: middle; }
-.itk-table tbody th { text-align: left; font-weight: 600; color: var(--itk-ink); }
+.itk-table td { white-space: nowrap; }
+.itk-table tbody th { text-align: left; font-weight: 600; color: var(--itk-ink); min-width: 10rem; }
 .itk-table tbody tr:last-child > * { border-bottom: 0; }
 .itk-table tbody tr:hover { background: var(--itk-accent-soft); }
 .itk-table .itk-num { text-align: right; white-space: nowrap; }
@@ -44,3 +45,6 @@
 
 /* Grid of small tiles (dashboard card view): columns follow the available width */
 .itk-grid-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--itk-space-3); }
+
+/* Native dialogs (x-itk.alert-dialog) */
+dialog.itk-dialog::backdrop { background: var(--itk-scrim); }

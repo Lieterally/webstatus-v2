@@ -3,52 +3,57 @@
 @section('title', 'Categories')
 
 @section('content')
-    <div class="flex items-center justify-between mb-6">
-        <div>
-            <h1 class="text-2xl font-bold text-base-content">Categories</h1>
-            <p class="text-sm text-base-content/60 mt-1">Manage website categories</p>
-        </div>
-        <a href="{{ route('categories.create') }}" class="btn btn-primary btn-sm">
-            Add Category
-        </a>
-    </div>
+    <x-itk.back-link :href="route('sites.index')">Website manager</x-itk.back-link>
+    <x-itk.page-header title="Categories" description="Group websites by category." class="mt-1">
+        <x-slot:actions>
+            <x-itk.button :href="route('categories.create')" icon="plus">Add category</x-itk.button>
+        </x-slot:actions>
+    </x-itk.page-header>
 
-    <div class="card bg-base-100 shadow-sm">
-        <div class="card-body p-0">
-            <div class="overflow-x-auto">
-                <table class="table table-zebra">
-                    <thead>
+    <div x-data="{ target: { name: '', url: '' }, confirmDelete(name, url) { this.target = { name, url }; $refs.confirmDialog.showModal(); } }">
+        @if ($categories->isEmpty())
+            <x-itk.card>
+                <x-itk.empty title="No categories yet" icon="folder">
+                    <x-slot:action>
+                        <x-itk.button :href="route('categories.create')" icon="plus">Add category</x-itk.button>
+                    </x-slot:action>
+                    Add a category, then assign websites to it.
+                </x-itk.empty>
+            </x-itk.card>
+        @else
+            <x-itk.table caption="Categories" hide-caption caption-id="categories-caption" class="shadow-1">
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col" class="itk-num">Websites</th>
+                        <th scope="col" class="itk-num"><span class="sr-only">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($categories as $category)
                         <tr>
-                            <th>Name</th>
-                            <th>Sites</th>
-                            <th class="text-right">Actions</th>
+                            <th scope="row">{{ $category->name }}</th>
+                            <td class="itk-num">{{ $category->sites_count }}</td>
+                            <td class="itk-num">
+                                <div class="inline-flex gap-2">
+                                    <x-itk.button variant="ghost" size="sm" icon="pencil" :href="route('categories.edit', $category)"
+                                        :aria-label="'Edit ' . $category->name">Edit</x-itk.button>
+                                    <x-itk.button variant="ghost" size="sm" icon="trash-2" class="text-error hover:bg-error-soft"
+                                        :aria-label="'Delete ' . $category->name"
+                                        x-on:click="confirmDelete({{ Js::from($category->name) }}, {{ Js::from(route('categories.destroy', $category)) }})">
+                                        Delete
+                                    </x-itk.button>
+                                </div>
+                            </td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        @forelse($categories as $category)
-                            <tr class="hover">
-                                <td class="font-medium">{{ $category->name }}</td>
-                                <td>{{ $category->sites_count }}</td>
-                                <td class="text-right space-x-2">
-                                    <a href="{{ route('categories.edit', $category) }}"
-                                        class="btn btn-ghost btn-sm">Edit</a>
-                                    <form action="{{ route('categories.destroy', $category) }}" method="POST"
-                                        class="inline"
-                                        onsubmit="return confirm('Are you sure you want to delete this category?')">
-                                        @csrf
-                                        @method('DELETE')
-                                        <button type="submit" class="btn btn-error btn-sm btn-ghost">Delete</button>
-                                    </form>
-                                </td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td colspan="3" class="text-center text-base-content/60">No categories found.</td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
-        </div>
+                    @endforeach
+                </tbody>
+            </x-itk.table>
+        @endif
+
+        <x-itk.alert-dialog action="target.url" confirm-label="Delete category" id="delete-category">
+            <x-slot:heading>Delete <span x-text="target.name"></span>?</x-slot:heading>
+            The category is removed. This cannot be undone.
+        </x-itk.alert-dialog>
     </div>
 @endsection

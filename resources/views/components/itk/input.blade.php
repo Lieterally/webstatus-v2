@@ -3,8 +3,8 @@
     Inside x-itk.field it takes id, name, hint, error and required from the field and wires
     aria-describedby / aria-invalid. Used alone it needs aria-label.
 --}}
-@aware(['id' => null, 'name' => null, 'hint' => null, 'error' => null, 'required' => false])
 @props(['type' => 'text'])
+@aware(['id' => null, 'name' => null, 'hint' => null, 'error' => null, 'required' => false])
 
 @php
     $controlId = $attributes->get('id', $id ?? $name);
