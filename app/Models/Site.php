@@ -14,6 +14,7 @@ class Site extends Model
 
     protected $attributes = [
         'is_monitored' => true,
+        'is_public' => false,
     ];
 
     protected $fillable = [
@@ -24,6 +25,8 @@ class Site extends Model
         'responsible_person_id',
         'status',
         'is_monitored',
+        'is_public',
+        'public_name',
         'consecutive_down_count',
         'first_down_at',
         'notification_sent',
@@ -36,9 +39,16 @@ class Site extends Model
         return [
             'status' => SiteStatus::class,
             'is_monitored' => 'boolean',
+            'is_public' => 'boolean',
             'first_down_at' => 'datetime',
             'notification_sent' => 'boolean',
         ];
+    }
+
+    /** Name shown on the public status page. */
+    public function publicName(): string
+    {
+        return $this->public_name ?: $this->name;
     }
 
     public function category(): BelongsTo

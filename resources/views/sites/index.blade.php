@@ -80,6 +80,9 @@
                                     @unless ($site->is_monitored)
                                         <x-itk.badge tone="neutral" icon="circle-pause">Not monitored</x-itk.badge>
                                     @endunless
+                                    @if ($site->is_public)
+                                        <x-itk.badge tone="info" icon="eye">Public</x-itk.badge>
+                                    @endif
                                 </span>
                             </th>
                             <td>{{ $site->category->name }}</td>

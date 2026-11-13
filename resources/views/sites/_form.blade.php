@@ -50,6 +50,25 @@
     </div>
 @endif
 
+{{-- Public status page --}}
+<fieldset class="grid gap-3 pt-5 border-t border-line" x-data="{ isPublic: @js((bool) old('is_public', $site?->is_public ?? false)) }">
+    <legend class="text-headline text-ink pt-5 float-left w-full">Public status page</legend>
+    <div>
+        <x-itk.checkbox name="is_public" label="Show on the public status page" unchecked="0"
+            :checked="(bool) old('is_public', $site?->is_public ?? false)" x-on:change="isPublic = $event.target.checked"
+            description="Anyone can see this website's status, uptime and outages without logging in. Leave it off for internal or sensitive services." />
+        @error('is_public')
+            <p class="flex items-start gap-1 text-footnote font-medium text-error mt-1">
+                <x-itk.icon name="circle-alert" size="16" class="mt-px" />{{ $message }}
+            </p>
+        @enderror
+    </div>
+    <x-itk.field name="public_name" label="Public name (optional)"
+        hint="Shown on the public page instead of the name above. Up to 100 characters." x-show="isPublic" x-cloak>
+        <x-itk.input :value="old('public_name', $site?->public_name)" maxlength="100" />
+    </x-itk.field>
+</fieldset>
+
 <fieldset class="grid gap-2" x-data="pageManager()">
     <legend class="text-callout font-semibold text-ink mb-1.5">
         Pages<span class="text-error ml-0.5" aria-hidden="true">*</span>

@@ -69,6 +69,8 @@ class SiteController extends Controller
             'base_url' => $validated['base_url'],
             'description' => $validated['description'] ?? null,
             'responsible_person_id' => $validated['responsible_person_id'],
+            'is_public' => (bool) ($validated['is_public'] ?? false),
+            'public_name' => $validated['public_name'] ?? null,
         ]);
 
         // Create associated pages
@@ -105,6 +107,8 @@ class SiteController extends Controller
             'base_url' => $validated['base_url'],
             'description' => $validated['description'] ?? null,
             'responsible_person_id' => $validated['responsible_person_id'],
+            'is_public' => (bool) ($validated['is_public'] ?? false),
+            'public_name' => $validated['public_name'] ?? null,
         ]);
 
         if (array_key_exists('is_monitored', $validated)) {

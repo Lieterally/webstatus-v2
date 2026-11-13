@@ -24,6 +24,8 @@ class StoreSiteRequest extends FormRequest
             'category_id' => ['required', 'exists:categories,id'],
             'base_url' => ['required', 'string', 'regex:/^https?:\/\//', 'unique:sites,base_url'],
             'description' => ['nullable', 'string', 'max:500'],
+            'is_public' => ['sometimes', 'boolean'],
+            'public_name' => ['nullable', 'string', 'max:100'],
             'pages' => ['required', 'array', 'min:1', 'max:50'],
             'pages.*' => ['required', 'string', 'regex:/^\//'],
             'responsible_person_id' => ['required', 'exists:it_staffs,id'],

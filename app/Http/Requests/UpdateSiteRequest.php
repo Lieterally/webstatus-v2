@@ -32,6 +32,8 @@ class UpdateSiteRequest extends FormRequest
                 Rule::unique('sites', 'base_url')->ignore($siteId),
             ],
             'description' => ['nullable', 'string', 'max:500'],
+            'is_public' => ['sometimes', 'boolean'],
+            'public_name' => ['nullable', 'string', 'max:100'],
             'pages' => ['required', 'array', 'min:1', 'max:50'],
             'pages.*' => ['required', 'string', 'regex:/^\//'],
             'responsible_person_id' => ['required', 'exists:it_staffs,id'],
