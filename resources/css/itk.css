@@ -1,0 +1,32 @@
+/* ITK component rules that utilities can't express cleanly (theme-specific selectors,
+   pseudo-elements). Ported from design-system/reference/components.css. Tokens only. */
+
+/* Toaster: bottom on phones, bottom-right from 768px */
+.itk-toaster {
+    position: fixed;
+    z-index: var(--itk-z-toast);
+    left: var(--itk-space-4);
+    right: var(--itk-space-4);
+    bottom: calc(var(--itk-space-4) + env(safe-area-inset-bottom));
+    display: grid;
+    gap: var(--itk-space-2);
+    justify-items: center;
+    pointer-events: none;
+}
+@media (min-width: 768px) {
+    .itk-toaster { left: auto; right: var(--itk-space-6); justify-items: end; }
+}
+/* Toasts sit on surface-inverse, so their icons use the opposite theme's status colors */
+.itk-toast-success .itk-toast-icon { color: var(--itk-green-300); }
+.itk-toast-danger .itk-toast-icon { color: var(--itk-red-300); }
+.itk-toast-warning .itk-toast-icon { color: var(--itk-gold-300); }
+.itk-toast-info .itk-toast-icon { color: var(--itk-blue-300); }
+[data-theme="dark"] .itk-toast-success .itk-toast-icon { color: var(--itk-green-600); }
+[data-theme="dark"] .itk-toast-danger .itk-toast-icon { color: var(--itk-red-600); }
+[data-theme="dark"] .itk-toast-warning .itk-toast-icon { color: var(--itk-gold-700); }
+[data-theme="dark"] .itk-toast-info .itk-toast-icon { color: var(--itk-blue-700); }
+.itk-toast-x:hover { background: color-mix(in srgb, var(--itk-ink-inverse) 12%, transparent); }
+.itk-toast :focus-visible { outline-color: currentColor; }
+
+/* Scrim behind drawers and dialogs */
+.itk-scrim { background: var(--itk-scrim); }

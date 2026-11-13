@@ -2,6 +2,7 @@
 @import '../../design-system/tokens.css';
 @import 'tom-select/dist/css/tom-select.css';
 @import './tom-select-itk.css';
+@import './itk.css';
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
