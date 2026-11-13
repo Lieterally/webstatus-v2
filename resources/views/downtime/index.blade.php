@@ -32,24 +32,105 @@
 
     <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
-        {{-- Gantt chart (last 24 hours) --}}
-        <x-itk.card title="Downtime timeline (last 24 hours)" class="xl:col-span-3">
+        {{-- Outages in the last 24 hours: grouped incidents (default) or one row per website --}}
+        <x-itk.card title="Outages in the last 24 hours" class="xl:col-span-3 min-w-0">
             @if (empty($ganttLabels))
                 <x-itk.empty title="No downtime in the last 24 hours" icon="circle-check" class="py-6" />
             @else
-                <ul class="flex flex-wrap gap-x-6 gap-y-2 mb-3 text-callout font-normal text-ink" aria-label="Legend">
-                    <li class="flex items-center gap-2"><span class="inline-block w-4 h-3 rounded-xs bg-error" aria-hidden="true"></span>Ongoing</li>
-                    <li class="flex items-center gap-2"><span class="inline-block w-4 h-3 rounded-xs bg-chart-4" aria-hidden="true"></span>Resolved</li>
-                </ul>
-                <div id="ganttChart" role="img" aria-label="Timeline of outages per website over the last 24 hours"
-                    style="max-height: 400px; overflow-y: auto;"></div>
-                <style>
-                    #ganttChart .apexcharts-xaxis {
-                        position: sticky;
-                        top: 0;
-                        z-index: 10;
-                    }
-                </style>
+                @php
+                    $clock = fn ($t) => $t->format('H.i');
+                    $incidentTime = function ($i) use ($clock) {
+                        $start = $i['start'];
+                        $prefix = $start->isToday() ? '' : $start->format('j M') . ', ';
+                        return $prefix . $clock($start) . ' – ' . ($i['end'] ? $clock($i['end']) : 'now') . ' WITA';
+                    };
+                    $siteCount = count($ganttLabels);
+                    $incidentCount = count($incidents);
+                @endphp
+                <div x-data="downtimeTimeline()" x-init="init()">
+                    <div role="tablist" aria-label="Outage view" class="flex gap-1 border-b border-line mb-4"
+                        x-on:keydown.right.prevent="select(tab === 'incidents' ? 'sites' : 'incidents', true)"
+                        x-on:keydown.left.prevent="select(tab === 'incidents' ? 'sites' : 'incidents', true)">
+                        @foreach (['incidents' => "Incidents ({$incidentCount})", 'sites' => "By website ({$siteCount})"] as $key => $tabLabel)
+                            <button type="button" role="tab" id="tab-{{ $key }}" aria-controls="panel-{{ $key }}"
+                                x-bind:aria-selected="(tab === '{{ $key }}').toString()" x-bind:tabindex="tab === '{{ $key }}' ? 0 : -1"
+                                x-on:click="select('{{ $key }}')"
+                                x-bind:class="tab === '{{ $key }}'
+                                    ? 'text-ink font-semibold after:absolute after:inset-x-2 after:-bottom-px after:h-0.75 after:rounded-t-xs after:bg-primary'
+                                    : 'text-ink-muted hover:text-ink hover:bg-surface-sunken'"
+                                class="relative min-h-11 px-4 rounded-t-sm text-callout cursor-pointer">
+                                {{ $tabLabel }}
+                            </button>
+                        @endforeach
+                    </div>
+
+                    {{-- Incidents: how many websites were down at once, then the grouped outages --}}
+                    <div id="panel-incidents" role="tabpanel" aria-labelledby="tab-incidents" tabindex="0"
+                        x-bind:style="tab === 'incidents' ? '' : 'display: none'">
+                        <p class="text-footnote text-ink-muted">
+                            Websites down at the same time. Peak: {{ $peakDown }} {{ \Illuminate\Support\Str::plural('website', $peakDown) }}.
+                        </p>
+                        <div id="concurrencyChart" role="img"
+                            aria-label="Number of websites down over the last 24 hours. Peak: {{ $peakDown }}."></div>
+
+                        <ul class="grid mt-2" aria-label="Incidents">
+                            @foreach ($incidents as $n => $incident)
+                                <li class="py-3 border-t border-line" x-data="{ open: false }"
+                                    @if ($n >= 8) style="display: none" x-bind:style="showAllIncidents ? '' : 'display: none'" @endif>
+                                    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                                        @if ($incident['ongoing'])
+                                            <x-itk.badge tone="danger" icon="circle-x">Ongoing</x-itk.badge>
+                                        @else
+                                            <x-itk.badge tone="success" icon="circle-check">Resolved</x-itk.badge>
+                                        @endif
+                                        <span class="text-callout font-semibold text-ink tabular-nums">{{ $incidentTime($incident) }}</span>
+                                        <span class="text-callout font-normal text-ink-muted">
+                                            {{ \App\Services\PublicStatusService::formatDuration($incident['duration_seconds']) }}{{ $incident['ongoing'] ? ' so far' : '' }}
+                                        </span>
+                                        @if ($incident['count'] === 1)
+                                            <span class="text-callout font-normal text-ink">{{ $incident['sites'][0] }}</span>
+                                        @else
+                                            <span class="text-callout font-normal text-ink">{{ $incident['count'] }} websites down</span>
+                                            <x-itk.button variant="ghost" size="sm" class="max-lg:min-h-11"
+                                                x-on:click="open = !open" aria-controls="incident-{{ $n }}-sites"
+                                                x-bind:aria-expanded="open.toString()" aria-expanded="false">
+                                                <span x-text="open ? 'Hide websites' : 'Show websites'">Show websites</span>
+                                                <x-itk.icon name="chevron-down" size="16" class="transition-transform duration-200" x-bind:class="open && 'rotate-180'" />
+                                            </x-itk.button>
+                                        @endif
+                                    </div>
+                                    @if ($incident['count'] > 1)
+                                        <ul id="incident-{{ $n }}-sites" class="flex flex-wrap gap-2 mt-3" style="display: none" x-bind:style="open ? '' : 'display: none'">
+                                            @foreach ($incident['sites'] as $siteName)
+                                                <li class="px-2 py-0.5 rounded-xs bg-surface-sunken border border-line text-footnote text-ink">{{ $siteName }}</li>
+                                            @endforeach
+                                        </ul>
+                                    @endif
+                                </li>
+                            @endforeach
+                        </ul>
+                        @if ($incidentCount > 8)
+                            <x-itk.button variant="ghost" class="mt-1" x-on:click="showAllIncidents = !showAllIncidents">
+                                <span x-text="showAllIncidents ? 'Show fewer incidents' : 'Show all {{ $incidentCount }} incidents'">Show all {{ $incidentCount }} incidents</span>
+                            </x-itk.button>
+                        @endif
+                    </div>
+
+                    {{-- By website: compact rows, most downtime first --}}
+                    <div id="panel-sites" role="tabpanel" aria-labelledby="tab-sites" tabindex="0" style="display: none"
+                        x-bind:style="tab === 'sites' ? '' : 'display: none'">
+                        <ul class="flex flex-wrap gap-x-6 gap-y-2 mb-2 text-callout font-normal text-ink" aria-label="Legend">
+                            <li class="flex items-center gap-2"><span class="inline-block w-4 h-3 rounded-xs bg-error" aria-hidden="true"></span>Ongoing</li>
+                            <li class="flex items-center gap-2"><span class="inline-block w-4 h-3 rounded-xs bg-chart-4" aria-hidden="true"></span>Resolved</li>
+                        </ul>
+                        <div id="ganttChart" role="img" aria-label="Outages per website over the last 24 hours, most downtime first"></div>
+                        @if ($siteCount > 10)
+                            <x-itk.button variant="ghost" class="mt-1" x-on:click="toggleAllSites()">
+                                <span x-text="allSites ? 'Show the 10 most affected' : 'Show all {{ $siteCount }} websites'">Show all {{ $siteCount }} websites</span>
+                            </x-itk.button>
+                        @endif
+                    </div>
+                </div>
             @endif
         </x-itk.card>
 
@@ -183,69 +264,97 @@
     @if (! empty($ganttLabels))
         @push('scripts')
             <script>
-                document.addEventListener('DOMContentLoaded', function() {
+                // Outages card: "websites down" chart + incident list, and the compact per-website Gantt.
+                function downtimeTimeline() {
+                    const concurrency = @js($concurrency);
                     const ganttData = @js($ganttData);
-                    const chartHeight = Math.max(250, ganttData.length * 40 + 80);
-                    let chart = null;
+                    const labels = @js($ganttLabels);
+                    const peak = @js($peakDown);
+                    const windowStart = @js($ganttStart->getTimestampMs());
+                    const windowEnd = @js(now()->getTimestampMs());
+                    const ROW = 32;
+                    const xaxis = () => ({
+                        type: 'datetime', min: windowStart, max: windowEnd, tickAmount: 12,
+                        labels: { datetimeUTC: false, format: 'HH:mm' },
+                    });
+                    // Charts live outside Alpine's reactive data, so destroy() reaches the real objects
+                    let concurrencyChart = null;
+                    let ganttChart = null;
 
-                    // Bars are coloured from the event state, read from the tokens of the current theme:
-                    // ongoing = danger, resolved = chart-4 (neutral slate). The legend above names both.
-                    const buildOptions = () => {
-                        const colors = window.itkChartColors();
-                        const colorFor = { active: colors.danger, resolved: colors.series[3] };
-                        return {
-                            series: [{
-                                data: ganttData.map((d) => ({ ...d, fillColor: colorFor[d.state] ?? colors.series[3] })),
-                            }],
-                            chart: {
-                                type: 'rangeBar',
-                                height: chartHeight,
-                                toolbar: { show: false },
-                                zoom: { enabled: true },
-                            },
-                            plotOptions: {
-                                bar: {
-                                    horizontal: true,
-                                    barHeight: '50%',
-                                    borderRadius: 6,
-                                    rangeBarGroupRows: true,
-                                }
-                            },
-                            xaxis: {
-                                type: 'datetime',
-                                position: 'top',
-                                min: @js($ganttStart->getTimestampMs()),
-                                max: @js(now()->getTimestampMs()),
-                                labels: { datetimeUTC: false, format: 'HH:mm' },
-                                tickAmount: 24,
-                            },
-                            yaxis: {
-                                labels: { style: { fontSize: '12px' } }
-                            },
-                            grid: {
-                                row: {
-                                    colors: [window.itkToken('surface-sunken'), 'transparent'],
-                                    opacity: 0.5,
+                    return {
+                        tab: 'incidents',
+                        showAllIncidents: false,
+                        allSites: false,
+                        init() {
+                            this.$nextTick(() => this.renderConcurrency());
+                            window.addEventListener('itk-theme-change', () => {
+                                this.renderConcurrency();
+                                if (ganttChart) this.renderGantt();
+                            });
+                        },
+                        select(tab, focus = false) {
+                            this.tab = tab;
+                            this.$nextTick(() => {
+                                if (focus) document.getElementById('tab-' + tab).focus();
+                                if (tab === 'sites' && !ganttChart) this.renderGantt();
+                            });
+                        },
+                        toggleAllSites() {
+                            this.allSites = !this.allSites;
+                            this.renderGantt();
+                        },
+                        renderConcurrency() {
+                            const colors = window.itkChartColors();
+                            if (concurrencyChart) concurrencyChart.destroy();
+                            concurrencyChart = new ApexCharts(document.getElementById('concurrencyChart'), {
+                                series: [{ name: 'Websites down', data: concurrency }],
+                                chart: { type: 'area', height: 180, toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false } },
+                                stroke: { curve: 'stepline', width: 2 },
+                                fill: { type: 'solid', opacity: 0.15 },
+                                colors: [colors.danger],
+                                dataLabels: { enabled: false },
+                                xaxis: xaxis(),
+                                yaxis: {
+                                    min: 0, max: Math.max(peak, 1), tickAmount: Math.min(Math.max(peak, 1), 4),
+                                    labels: { formatter: (v) => Math.round(v) },
                                 },
-                                xaxis: { lines: { show: true } },
-                                yaxis: { lines: { show: false } },
-                            },
-                            tooltip: {
-                                x: { format: 'dd MMM HH:mm' },
-                            },
-                            legend: { show: false },
-                        };
+                                grid: { borderColor: colors.grid },
+                                tooltip: {
+                                    x: { format: 'dd MMM HH:mm' },
+                                    y: { formatter: (v) => v + (v === 1 ? ' website down' : ' websites down') },
+                                },
+                                legend: { show: false },
+                            });
+                            concurrencyChart.render();
+                        },
+                        renderGantt() {
+                            const colors = window.itkChartColors();
+                            const colorFor = { active: colors.danger, resolved: colors.series[3] };
+                            const shown = this.allSites ? labels : labels.slice(0, 10);
+                            const keep = new Set(shown);
+                            if (ganttChart) ganttChart.destroy();
+                            ganttChart = new ApexCharts(document.getElementById('ganttChart'), {
+                                series: [{
+                                    data: ganttData.filter((d) => keep.has(d.x))
+                                        .map((d) => ({ ...d, fillColor: colorFor[d.state] ?? colors.series[3] })),
+                                }],
+                                chart: { type: 'rangeBar', height: shown.length * ROW + 70, toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false } },
+                                plotOptions: { bar: { horizontal: true, barHeight: '60%', borderRadius: 3, rangeBarGroupRows: true } },
+                                xaxis: { ...xaxis(), position: 'top' },
+                                yaxis: { labels: { style: { fontSize: '12px' }, maxWidth: 200 } },
+                                grid: {
+                                    borderColor: colors.grid,
+                                    row: { colors: [window.itkToken('surface-sunken'), 'transparent'], opacity: 0.5 },
+                                    xaxis: { lines: { show: true } },
+                                    yaxis: { lines: { show: false } },
+                                },
+                                tooltip: { x: { format: 'dd MMM HH:mm' } },
+                                legend: { show: false },
+                            });
+                            ganttChart.render();
+                        },
                     };
-
-                    const renderChart = () => {
-                        if (chart) { chart.destroy(); }
-                        chart = new ApexCharts(document.getElementById('ganttChart'), buildOptions());
-                        chart.render();
-                    };
-
-                    renderChart();
-                    window.addEventListener('itk-theme-change', renderChart);
-                });
+                }
             </script>
         @endpush
     @endif

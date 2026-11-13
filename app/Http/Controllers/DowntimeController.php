@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\OutageTimeline;
 use App\Models\DowntimeHistory;
 use App\Models\Site;
 use Illuminate\Http\Request;
@@ -106,23 +107,35 @@ class DowntimeController extends Controller
             ->orderBy('started_at')
             ->get();
 
+        $now = Carbon::now();
+        $spans = [];
         $ganttData = [];
+        $downPerSite = [];
         foreach ($ganttEvents as $event) {
             $siteName = $event->site?->name ?? 'Unknown';
             $barStart = $event->started_at->lt($ganttStart) ? $ganttStart : $event->started_at;
-            $barEnd = $event->ended_at ?? Carbon::now();
+            $barEnd = $event->ended_at ?? $now;
 
+            $spans[] = ['site' => $siteName, 'start' => $barStart, 'end' => $event->ended_at, 'active' => $event->isActive()];
+            $downPerSite[$siteName] = ($downPerSite[$siteName] ?? 0) + max(0, (int) $barStart->diffInSeconds($barEnd));
             $ganttData[] = [
                 'x' => $siteName,
-                'y' => [
-                    $barStart->getTimestampMs(),
-                    $barEnd->getTimestampMs(),
-                ],
+                'y' => [$barStart->getTimestampMs(), $barEnd->getTimestampMs()],
                 'state' => $event->isActive() ? 'active' : 'resolved',
             ];
         }
 
-        $ganttLabels = collect($ganttEvents)->map(fn($e) => $e->site?->name ?? 'Unknown')->unique()->values()->toArray();
+        // "By website" view: most downtime first, so the top rows matter most
+        arsort($downPerSite);
+        $ganttLabels = array_keys($downPerSite);
+        $order = array_flip($ganttLabels);
+        usort($ganttData, fn ($a, $b) => $order[$a['x']] <=> $order[$b['x']]);
+
+        // "Incidents" view: overlapping outages grouped, and how many websites were down over time
+        $timeline = app(OutageTimeline::class);
+        $incidents = $timeline->incidents($spans, $now);
+        $concurrency = $timeline->concurrency($spans, $ganttStart, $now);
+        $peakDown = $concurrency ? max(array_column($concurrency, 1)) : 0;
 
         return view('downtime.index', compact(
             'events',
@@ -138,6 +151,9 @@ class DowntimeController extends Controller
             'ganttData',
             'ganttLabels',
             'ganttStart',
+            'incidents',
+            'concurrency',
+            'peakDown',
         ));
     }
 }
