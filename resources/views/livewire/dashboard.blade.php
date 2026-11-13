@@ -38,145 +38,76 @@
         }
     }
 }" x-on:livewire:navigating.window="destroy()">
-    {{-- Page Header --}}
-    <div class="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-            <h1 class="text-2xl font-bold text-base-content">Dashboard</h1>
-            <p class="text-sm text-base-content/60 mt-1">Website monitoring overview</p>
-        </div>
+    @php
+        $rangeOptions = array_combine($r = ['1D', '3D', '7D', '1M', '3M', '6M', '1Y'], $r);
+    @endphp
 
-        {{-- Refresh All Button + Log Button --}}
-        <div class="flex items-center gap-2">
-            <button wire:click="refreshAll" wire:loading.attr="disabled" x-bind:disabled="cycleInProgress || isRefreshing || !monitoringEnabled"
-                class="btn btn-primary btn-md gap-2">
+    <x-itk.page-header title="Dashboard" description="Website monitoring overview">
+        <x-slot:actions>
+            <x-itk.button wire:click="refreshAll" loading="refreshAll" icon="refresh-cw"
+                x-bind:disabled="cycleInProgress || isRefreshing || !monitoringEnabled">
+                <span wire:loading.remove wire:target="refreshAll">Refresh all now</span>
+                <span wire:loading wire:target="refreshAll">Refreshing…</span>
+            </x-itk.button>
+            <x-itk.button id="liveLogButton" variant="secondary" icon="scroll-text" wire:click="toggleLogDrawer"
+                aria-haspopup="dialog">
+                Live log
+            </x-itk.button>
+        </x-slot:actions>
+    </x-itk.page-header>
 
-                <!-- Loading Icon -->
-                <i wire:loading wire:target="refreshAll" class="fa-solid fa-rotate-right animate-spin text-sm"></i>
-
-                <!-- Normal Icon -->
-                <i wire:loading.remove wire:target="refreshAll" x-show="!cycleInProgress && !isRefreshing"
-                    class="fa-solid fa-rotate-right text-sm"></i>
-
-                <span wire:loading.remove wire:target="refreshAll">
-                    Refresh All Now
-                </span>
-
-                <span wire:loading wire:target="refreshAll">
-                    Refreshing...
-                </span>
-            </button>
-
-            {{-- Live Log Button --}}
-            <button wire:click="toggleLogDrawer" class="btn btn-ghost btn-lg btn-square" title="View live logs">
-                <i class="fa-regular fa-clipboard"></i>
-            </button>
-        </div>
-    </div>
-
-    {{-- Summary Cards using DaisyUI stats --}}
-    <div class="stats stats-vertical sm:stats-horizontal bg-base-100 shadow-sm w-full mb-6">
-        {{-- Total Sites --}}
-        <div class="stat">
-            <div class="stat-figure text-primary">
-                <i class="fa-regular fa-globe fa-lg"></i>
-            </div>
-            <div class="stat-title">Total Sites</div>
-            <div class="stat-value text-base-content">{{ $totalSites }}</div>
+    {{-- Summary tiles --}}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <x-itk.stat title="Total sites" :value="$totalSites" icon="globe">
             @if ($sitesUnmonitored > 0)
-                <div class="stat-desc">{{ $sitesUnmonitored }} not monitored</div>
+                {{ $sitesUnmonitored }} not monitored
             @endif
-        </div>
+        </x-itk.stat>
 
-        {{-- Sites Down --}}
-        <div class="stat">
-            <div class="stat-figure text-error">
-                <i class="fa-regular fa-warning fa-lg"></i>
-            </div>
-            <div class="stat-title">Sites Down</div>
-            <div class="stat-value text-error">{{ $sitesDown }}</div>
-        </div>
+        <x-itk.stat title="Sites down" :value="$sitesDown" icon="circle-x" tone="danger" />
 
-        {{-- Sites Up --}}
-        <div class="stat">
-            <div class="stat-figure text-success">
-                <i class="fa-regular fa-circle-check fa-lg"></i>
-            </div>
-            <div class="stat-title">Sites Up</div>
-            <div class="stat-value text-success">{{ $sitesUp }}</div>
-        </div>
+        <x-itk.stat title="Sites up" :value="$sitesUp" icon="circle-check" tone="success" />
 
-        {{-- Last Cycle / Countdown --}}
-        <div class="stat">
-            <div class="stat-figure text-base-content/50">
-                <i class="fa-regular fa-clock fa-lg"></i>
-            </div>
-            <div class="stat-title">Last Cycle</div>
-            @if ($lastCycleDatetime)
-                <div class="stat-value text-sm font-semibold">{{ $lastCycleDatetime }}</div>
-            @else
-                <div class="stat-value text-sm font-semibold text-base-content/40 italic">No data yet</div>
-            @endif
-            <div class="stat-desc">
-                <template x-if="cycleInProgress || isRefreshing">
-                    <div class="flex items-center gap-1.5">
-                        <svg class="animate-spin h-3.5 w-3.5 text-warning" xmlns="http://www.w3.org/2000/svg"
-                            fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
-                                stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor"
-                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
-                            </path>
-                        </svg>
-                        <span class="text-xs font-medium text-warning">Refreshing... (paused)</span>
-                    </div>
-                </template>
-                <template x-if="!cycleInProgress && !isRefreshing && !monitoringEnabled">
-                    <span class="text-xs font-medium text-warning">Monitoring is turned off</span>
-                </template>
-                <template x-if="!cycleInProgress && !isRefreshing && monitoringEnabled">
-                    <div class="flex items-center gap-1.5">
-                        <svg class="h-3.5 w-3.5 text-base-content/40" fill="none" stroke="currentColor"
-                            viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span class="text-xs font-medium text-base-content/60">Next cycle in <span class="font-mono"
-                                x-text="formattedCountdown"></span></span>
-                    </div>
-                </template>
-            </div>
-        </div>
+        <x-itk.stat title="Last cycle" icon="clock">
+            <p class="text-headline text-ink tabular-nums mb-1">
+                @if ($lastCycleDatetime)
+                    {{ $lastCycleDatetime }}
+                @else
+                    <span class="text-ink-muted font-normal">No data yet</span>
+                @endif
+            </p>
+            <template x-if="cycleInProgress || isRefreshing">
+                <span class="flex items-center gap-1.5 font-medium text-warning">
+                    <x-itk.spinner size="14" label="Checking" />
+                    Checking now, countdown paused
+                </span>
+            </template>
+            <template x-if="!cycleInProgress && !isRefreshing && !monitoringEnabled">
+                <span class="flex items-center gap-1.5 font-medium text-warning">
+                    <x-itk.icon name="circle-pause" size="16" />
+                    Monitoring is turned off
+                </span>
+            </template>
+            <template x-if="!cycleInProgress && !isRefreshing && monitoringEnabled">
+                <span class="flex items-center gap-1.5">
+                    <x-itk.icon name="timer" size="16" />
+                    Next cycle in <span class="tabular-nums font-medium text-ink" x-text="formattedCountdown"></span>
+                </span>
+            </template>
+        </x-itk.stat>
     </div>
 
-
-    {{-- Overview Charts Section --}}
-    <div class="card bg-base-100 shadow-sm mb-6">
-        <div class="card-body">
-            {{-- Header with site filter --}}
-            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-                <div>
-                    <h2 class="card-title">Overview</h2>
-                </div>
-                <div class="flex items-center gap-2">
-                </div>
-            </div>
-
-            {{-- Charts grid --}}
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    {{-- Overview charts --}}
+    <x-itk.card title="Overview" class="mb-6">
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 {{-- Response Time Chart --}}
                 <div>
-                    <div class="flex items-center justify-between mb-3">
-                        <h3 class="text-sm font-semibold text-base-content/70">Response Time</h3>
-                        <div class="join">
-                            @foreach (['1D', '3D', '7D', '1M', '3M', '6M', '1Y'] as $filter)
-                                <button wire:click="$set('responseTimeFilter', '{{ $filter }}')"
-                                    class="join-item btn btn-xs {{ $responseTimeFilter === $filter ? 'btn-primary' : 'btn-ghost' }}">
-                                    {{ $filter }}
-                                </button>
-                            @endforeach
-                        </div>
+                    <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                        <h3 class="text-headline text-ink">Response time</h3>
+                        <x-itk.toggle-group label="Response time range" model="responseTimeFilter"
+                            :value="$responseTimeFilter" :options="$rangeOptions" />
                     </div>
-                    <div class="bg-base-200/50 rounded-lg p-4" style="height: 280px;" wire:ignore
+                    <div class="bg-surface-sunken rounded-md p-4" style="height: 280px;" wire:ignore
                         x-data="{
                             chart: null,
                             chartData: null,
@@ -232,40 +163,29 @@
                                 });
                             }
                         }">
-                        <canvas x-ref="overviewResponseCanvas" style="width: 100%; height: 100%;"></canvas>
+                        <canvas x-ref="overviewResponseCanvas" role="img" aria-label="Average response time chart, all websites" style="width: 100%; height: 100%;"></canvas>
                     </div>
                 </div>
 
                 {{-- Downtime Chart --}}
                 <div>
-                    <div class="flex items-center justify-between mb-3">
-                        <a href="{{ route('downtime.index') }}"
-                            class="text-sm font-semibold text-base-content/70 hover:text-primary transition-colors duration-150 group">
-                            Downtime
-                            <i
-                                class="fa-solid fa-arrow-right text-xs px-2 group-hover:translate-x-0.5 transition-transform duration-150"></i>
-                        </a>
-                        <div class="flex items-center gap-2">
-                            <span class="badge badge-error badge-sm" id="downtimeTotalBadge">
-                                Total: {{ $overviewChartData['downtime']['totalHours'] }}
-                            </span>
-                            {{-- <a href="{{ route('downtime.index') }}"
-                                class="badge badge-error badge-sm gap-1 hover:badge-error cursor-pointer"
-                                id="downtimeTotalBadge">
-                                Total: {{ $overviewChartData['downtime']['totalHours'] }}
-                                <i class="fa-solid fa-arrow-right text-xs"></i>
-                            </a> --}}
-                            <div class="join">
-                                @foreach (['1D', '3D', '7D', '1M', '3M', '6M', '1Y'] as $filter)
-                                    <button wire:click="$set('downtimeFilter', '{{ $filter }}')"
-                                        class="join-item btn btn-xs {{ $downtimeFilter === $filter ? 'btn-primary' : 'btn-ghost' }}">
-                                        {{ $filter }}
-                                    </button>
-                                @endforeach
-                            </div>
+                    <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                        <div class="flex flex-wrap items-center gap-3">
+                            <h3 class="text-headline text-ink">
+                                <a href="{{ route('downtime.index') }}"
+                                    class="inline-flex items-center gap-1 min-h-11 text-link hover:underline underline-offset-3 rounded-xs">
+                                    Downtime<span class="sr-only"> details</span>
+                                    <x-itk.icon name="arrow-right" size="16" />
+                                </a>
+                            </h3>
+                            <x-itk.badge tone="danger" icon="clock-alert">
+                                <span id="downtimeTotalBadge">Total: {{ $overviewChartData['downtime']['totalHours'] }}</span>
+                            </x-itk.badge>
                         </div>
+                        <x-itk.toggle-group label="Downtime range" model="downtimeFilter" :value="$downtimeFilter"
+                            :options="$rangeOptions" />
                     </div>
-                    <div class="bg-base-200/50 rounded-lg p-4" style="height: 280px;" wire:ignore
+                    <div class="bg-surface-sunken rounded-md p-4" style="height: 280px;" wire:ignore
                         x-data="{
                             chart: null,
                             chartData: null,
@@ -328,17 +248,16 @@
                                 });
                             }
                         }">
-                        <canvas x-ref="overviewDowntimeCanvas" style="width: 100%; height: 100%;"></canvas>
+                        <canvas x-ref="overviewDowntimeCanvas" role="img" aria-label="Downtime chart, all websites" style="width: 100%; height: 100%;"></canvas>
                     </div>
                 </div>
             </div>
-        </div>
-    </div>
+    </x-itk.card>
 
     {{-- Detailed Site View (shown when a site is selected) --}}
     @if ($selectedSiteId && $this->selectedSiteData)
         @php $siteData = $this->selectedSiteData; @endphp
-        <div class="card bg-base-100 shadow-sm mb-6 overflow-hidden" wire:ignore.self
+        <section aria-labelledby="site-detail-title" class="bg-surface text-ink border border-line rounded-md shadow-1 mb-6 overflow-hidden" wire:ignore.self
             wire:key="site-detail-{{ $selectedSiteId }}" x-data="{
                 responseChart: null,
                 downtimeChart: null,
@@ -500,514 +419,336 @@
                     }
                 }
             }" x-init="initCharts()">
-            {{-- Detail Header --}}
-            <div
-                class="px-6 py-4 border-b border-base-200 bg-base-200/50 flex items-center justify-between flex-wrap gap-3">
-                <div class="flex items-center gap-3">
-                    <button wire:click="closeSiteDetail" class="btn btn-ghost btn-sm btn-square"
-                        title="Close detail view">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                        </svg>
-                    </button>
-                    <div>
-                        <h2 class="text-lg font-semibold text-base-content">{{ $siteData['site']->name }}</h2>
+            {{-- Detail header --}}
+            <div class="flex flex-wrap items-center justify-between gap-3 px-4 md:px-6 py-4 border-b border-line">
+                <div class="flex flex-wrap items-center gap-3 min-w-0">
+                    <x-itk.button variant="ghost" icon="arrow-left" icon-only label="Close site details"
+                        wire:click="closeSiteDetail" />
+                    <div class="min-w-0">
+                        <h2 id="site-detail-title" class="text-title-3 text-ink">{{ $siteData['site']->name }}</h2>
                         <a href="{{ $siteData['site']->base_url }}" target="_blank" rel="noopener noreferrer"
-                            class="text-sm text-base-content/50 hover:text-primary hover:underline">
-                            {{ $siteData['site']->base_url }}
+                            class="text-callout font-normal text-link hover:underline underline-offset-3 break-all">
+                            {{ $siteData['site']->base_url }}<span class="sr-only"> (opens in a new tab)</span>
                         </a>
                     </div>
-                    {{-- Status Badge --}}
-                    @php
-                        $status = $siteData['site']->status;
-                        $badgeClass = match ($status) {
-                            \App\Enums\SiteStatus::Up => 'badge-success',
-                            \App\Enums\SiteStatus::PartiallyDown => 'badge-warning',
-                            \App\Enums\SiteStatus::TotallyDown => 'badge-error',
-                        };
-                        $statusLabel = match ($status) {
-                            \App\Enums\SiteStatus::Up => 'Up',
-                            \App\Enums\SiteStatus::PartiallyDown => 'Partially Down',
-                            \App\Enums\SiteStatus::TotallyDown => 'Totally Down',
-                        };
-                        if (!$siteData['site']->is_monitored) {
-                            $badgeClass = 'badge-ghost';
-                            $statusLabel = 'Not Monitored';
-                        }
-                    @endphp
-                    <span class="badge {{ $badgeClass }}">
-                        {{ $statusLabel }}
+                    <x-itk.status-badge :status="$siteData['site']->status" :monitored="$siteData['site']->is_monitored" />
+                </div>
+
+                <x-itk.button wire:click="refreshSite({{ $siteData['site']->id }})" loading="refreshSite"
+                    icon="refresh-cw" :disabled="!$siteData['site']->is_monitored || !$monitoringEnabled">
+                    <span wire:loading.remove wire:target="refreshSite">Refresh</span>
+                    <span wire:loading wire:target="refreshSite">Refreshing…</span>
+                </x-itk.button>
+            </div>
+
+            {{-- Down info (shown when the site is down) --}}
+            @if ($siteData['downInfo'] && $siteData['site']->is_monitored)
+                <div class="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 md:px-6 py-3 bg-error-soft border-b border-line text-callout font-normal">
+                    <span class="flex items-center gap-1.5">
+                        <x-itk.icon name="clock-alert" size="16" class="text-error" />
+                        <span class="text-ink-muted">First down:</span>
+                        <span class="font-semibold text-ink">{{ $siteData['downInfo']['first_down_at'] }}</span>
+                    </span>
+                    <span class="flex items-center gap-1.5">
+                        <x-itk.icon name="timer" size="16" class="text-error" />
+                        <span class="text-ink-muted">Duration:</span>
+                        <span class="font-semibold text-ink">{{ $siteData['downInfo']['duration'] }}</span>
                     </span>
                 </div>
-
-                {{-- Per-Site Refresh Button --}}
-                <button wire:click="refreshSite({{ $siteData['site']->id }})" wire:loading.attr="disabled"
-                    wire:target="refreshSite" class="btn btn-primary btn-sm gap-2" @disabled(!$siteData['site']->is_monitored || !$monitoringEnabled)>
-                    <svg wire:loading wire:target="refreshSite" class="animate-spin h-4 w-4 text-white"
-                        xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
-                            stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor"
-                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
-                        </path>
-                    </svg>
-                    <svg wire:loading.remove wire:target="refreshSite" class="h-4 w-4" fill="none"
-                        stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    <span wire:loading.remove wire:target="refreshSite">Refresh</span>
-                    <span wire:loading wire:target="refreshSite">Refreshing...</span>
-                </button>
-            </div>
-
-            {{-- Down Info (shown when site is down) --}}
-            @if ($siteData['downInfo'] && $siteData['site']->is_monitored)
-                <div class="px-6 py-3 bg-error/10 border-b border-error/20">
-                    <div class="flex flex-wrap items-center gap-4 text-sm">
-                        <div class="flex items-center gap-1.5">
-                            <svg class="w-4 h-4 text-error" fill="none" stroke="currentColor"
-                                viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span class="text-base-content/60">First down:</span>
-                            <span class="font-semibold text-error">{{ $siteData['downInfo']['first_down_at'] }}</span>
-                        </div>
-                        <div class="flex items-center gap-1.5">
-                            <svg class="w-4 h-4 text-error" fill="none" stroke="currentColor"
-                                viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M13 10V3L4 14h7v7l9-11h-7z" />
-                            </svg>
-                            <span class="text-base-content/60">Duration:</span>
-                            <span class="font-semibold text-error">{{ $siteData['downInfo']['duration'] }}</span>
-                        </div>
-                    </div>
-                </div>
             @endif
 
-            {{-- Pages Table --}}
-            <div class="px-6 py-4">
-                <h3 class="text-sm font-semibold text-base-content/70 mb-3">Pages</h3>
-                <div class="overflow-x-auto">
-                    <table class="table table-zebra table-sm">
-                        <thead>
+            {{-- Pages --}}
+            <div class="px-4 md:px-6 py-4">
+                <x-itk.table caption="Pages" caption-id="site-pages-caption">
+                    <thead>
+                        <tr>
+                            <th scope="col">URL</th>
+                            <th scope="col">HTTP code</th>
+                            <th scope="col" class="itk-num">Response time</th>
+                            <th scope="col" class="itk-num">Last checked</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($siteData['pageResults'] as $pageResult)
                             <tr>
-                                <th>URL</th>
-                                <th class="text-center">HTTP Code</th>
-                                <th class="text-right">Response Time</th>
-                                <th class="text-right">Last Checked</th>
+                                <td class="min-w-60">
+                                    <span class="block text-ink">{{ $pageResult['path'] }}</span>
+                                    <a href="{{ $pageResult['full_url'] }}" target="_blank" rel="noopener noreferrer"
+                                        class="text-footnote text-link hover:underline underline-offset-3 break-all">
+                                        {{ $pageResult['full_url'] }}<span class="sr-only"> (opens in a new tab)</span>
+                                    </a>
+                                </td>
+                                <td>
+                                    @if ($pageResult['http_code'] === null)
+                                        <span class="text-ink-muted">No data</span>
+                                    @elseif($pageResult['http_code'] === 0)
+                                        <x-itk.badge tone="danger" icon="circle-x">Unreachable</x-itk.badge>
+                                    @elseif($pageResult['http_code'] >= 200 && $pageResult['http_code'] < 400)
+                                        <x-itk.badge tone="success" icon="circle-check">{{ $pageResult['http_code'] }}</x-itk.badge>
+                                    @else
+                                        <x-itk.badge tone="danger" icon="circle-x">{{ $pageResult['http_code'] }}</x-itk.badge>
+                                    @endif
+                                </td>
+                                <td class="itk-num">
+                                    @if ($pageResult['response_time_ms'] !== null && $pageResult['http_code'] > 0)
+                                        {{ number_format($pageResult['response_time_ms'], 0) }} ms
+                                    @elseif($pageResult['http_code'] === 0)
+                                        <span class="text-ink-muted">—</span>
+                                    @else
+                                        <span class="text-ink-muted">No data</span>
+                                    @endif
+                                </td>
+                                <td class="itk-num text-ink-muted">{{ $pageResult['checked_at'] ?? '—' }}</td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            @forelse($siteData['pageResults'] as $pageResult)
-                                <tr>
-                                    <td>
-                                        <span class="text-base-content">{{ $pageResult['path'] }}</span>
-                                        {{-- <span
-                                            class="text-xs text-base-content/40 block">{{ $pageResult['full_url'] }}</span> --}}
-                                        <a href="{{ $pageResult['full_url'] }}" target="_blank"
-                                            rel="noopener noreferrer"
-                                            class="text-xs text-base-content/40 block hover:text-primary hover:underline">
-                                            {{ $pageResult['full_url'] }}
-                                        </a>
-                                    </td>
-                                    <td class="text-center">
-                                        @if ($pageResult['http_code'] === null)
-                                            <span class="text-base-content/40 italic">No data</span>
-                                        @elseif($pageResult['http_code'] === 0)
-                                            <span class="badge badge-error badge-sm">
-                                                Unreachable
-                                            </span>
-                                        @elseif($pageResult['http_code'] >= 200 && $pageResult['http_code'] < 400)
-                                            <span class="badge badge-success badge-sm">
-                                                {{ $pageResult['http_code'] }}
-                                            </span>
-                                        @else
-                                            <span class="badge badge-error badge-sm">
-                                                {{ $pageResult['http_code'] }}
-                                            </span>
-                                        @endif
-                                    </td>
-                                    <td class="text-right">
-                                        @if ($pageResult['response_time_ms'] !== null && $pageResult['http_code'] > 0)
-                                            <span
-                                                class="font-mono text-base-content/70">{{ number_format($pageResult['response_time_ms'], 0) }}
-                                                ms</span>
-                                        @elseif($pageResult['http_code'] === 0)
-                                            <span class="text-base-content/40">&mdash;</span>
-                                        @else
-                                            <span class="text-base-content/40 italic">No data</span>
-                                        @endif
-                                    </td>
-                                    <td class="text-right text-base-content/50">
-                                        {{ $pageResult['checked_at'] ?? '—' }}
-                                    </td>
-                                </tr>
-                            @empty
-                                <tr>
-                                    <td colspan="4" class="text-center text-base-content/40 italic">No pages
-                                        defined for this site</td>
-                                </tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                </div>
+                        @empty
+                            <tr>
+                                <td colspan="4">
+                                    <x-itk.empty title="No pages yet" icon="file-text" class="py-6">
+                                        Add pages to this website in the website manager.
+                                    </x-itk.empty>
+                                </td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </x-itk.table>
             </div>
 
-            {{-- Charts Section --}}
-            <div class="px-6 py-4 border-t border-base-200">
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {{-- Response Time Chart --}}
+            {{-- Charts --}}
+            <div class="px-4 md:px-6 py-4 border-t border-line">
+                <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
                     <div>
-                        <div class="flex items-center justify-between mb-3">
-                            <h3 class="text-sm font-semibold text-base-content/70">Response Time</h3>
-                            <div class="join">
-                                @foreach (['1D', '3D', '7D', '1M', '3M', '6M', '1Y'] as $filter)
-                                    <button wire:click="$set('siteResponseTimeFilter', '{{ $filter }}')"
-                                        class="join-item btn btn-xs {{ $siteResponseTimeFilter === $filter ? 'btn-primary' : 'btn-ghost' }}">
-                                        {{ $filter }}
-                                    </button>
-                                @endforeach
-                            </div>
+                        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                            <h3 class="text-headline text-ink">Response time</h3>
+                            <x-itk.toggle-group label="Site response time range" model="siteResponseTimeFilter"
+                                :value="$siteResponseTimeFilter" :options="$rangeOptions" />
                         </div>
-                        <div class="bg-base-200/50 rounded-lg p-4" style="height: 280px;" wire:ignore>
-                            <canvas x-ref="responseTimeCanvas" style="width: 100%; height: 100%;"></canvas>
+                        <div class="bg-surface-sunken rounded-md p-4" style="height: 280px;" wire:ignore>
+                            <canvas x-ref="responseTimeCanvas" role="img" aria-label="Response time chart for {{ $siteData['site']->name }}"
+                                style="width: 100%; height: 100%;"></canvas>
                         </div>
                     </div>
 
-                    {{-- Downtime Chart --}}
                     <div>
-                        <div class="flex items-center justify-between mb-3">
-                            <h3 class="text-sm font-semibold text-base-content/70">Downtime</h3>
-                            <div class="flex items-center gap-2">
-                                <span class="badge badge-error badge-sm" id="siteDowntimeTotalBadge">
-                                    Total: {{ $siteData['downtimeData']['totalHours'] }}
-                                </span>
-                                <div class="join">
-                                    @foreach (['1D', '3D', '7D', '1M', '3M', '6M', '1Y'] as $filter)
-                                        <button wire:click="$set('siteDowntimeFilter', '{{ $filter }}')"
-                                            class="join-item btn btn-xs {{ $siteDowntimeFilter === $filter ? 'btn-primary' : 'btn-ghost' }}">
-                                            {{ $filter }}
-                                        </button>
-                                    @endforeach
-                                </div>
+                        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                            <div class="flex flex-wrap items-center gap-3">
+                                <h3 class="text-headline text-ink">Downtime</h3>
+                                <x-itk.badge tone="danger" icon="clock-alert">
+                                    <span id="siteDowntimeTotalBadge">Total: {{ $siteData['downtimeData']['totalHours'] }}</span>
+                                </x-itk.badge>
                             </div>
+                            <x-itk.toggle-group label="Site downtime range" model="siteDowntimeFilter"
+                                :value="$siteDowntimeFilter" :options="$rangeOptions" />
                         </div>
-                        <div class="bg-base-200/50 rounded-lg p-4" style="height: 280px;" wire:ignore>
-                            <canvas x-ref="downtimeCanvas" style="width: 100%; height: 100%;"></canvas>
+                        <div class="bg-surface-sunken rounded-md p-4" style="height: 280px;" wire:ignore>
+                            <canvas x-ref="downtimeCanvas" role="img" aria-label="Downtime chart for {{ $siteData['site']->name }}"
+                                style="width: 100%; height: 100%;"></canvas>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {{-- Downtime History Section --}}
-            <div class="px-6 py-4 border-t border-base-200">
-                <h3 class="text-sm font-semibold text-base-content/70 mb-3">Downtime History (Last 30 Days)</h3>
-                <div class="overflow-x-auto">
-                    <table class="table table-zebra table-sm">
-                        <thead>
+            {{-- Downtime history --}}
+            <div class="px-4 md:px-6 py-4 border-t border-line">
+                <x-itk.table caption="Downtime history (last 30 days)" caption-id="site-downtime-caption">
+                    <thead>
+                        <tr>
+                            <th scope="col" class="itk-num">#</th>
+                            <th scope="col">From</th>
+                            <th scope="col">To</th>
+                            <th scope="col">Pages</th>
+                            <th scope="col" class="itk-num">Duration</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($siteData['downtimeHistory'] as $index => $outage)
                             <tr>
-                                <th>#</th>
-                                <th>From</th>
-                                <th>To</th>
-                                <th>Pages</th>
-                                <th>Duration</th>
+                                <td class="itk-num text-ink-muted">{{ $index + 1 }}</td>
+                                <td class="whitespace-nowrap">{{ $outage['from'] }}</td>
+                                <td class="whitespace-nowrap">
+                                    @if ($outage['to'] === 'Ongoing')
+                                        <x-itk.badge tone="danger" icon="circle-x">Ongoing</x-itk.badge>
+                                    @else
+                                        {{ $outage['to'] }}
+                                    @endif
+                                </td>
+                                <td>{{ $outage['pages'] }}</td>
+                                <td class="itk-num font-semibold">{{ $outage['duration'] }}</td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            @forelse($siteData['downtimeHistory'] as $index => $outage)
-                                <tr>
-                                    <td>{{ $index + 1 }}</td>
-                                    <td class="font-mono text-xs">{{ $outage['from'] }}</td>
-                                    <td class="font-mono text-xs">
-                                        @if ($outage['to'] === 'Ongoing')
-                                            <span class="badge badge-error badge-xs">Ongoing</span>
-                                        @else
-                                            {{ $outage['to'] }}
-                                        @endif
-                                    </td>
-                                    <td class="text-xs">{{ $outage['pages'] }}</td>
-                                    <td class="font-semibold text-xs">{{ $outage['duration'] }}</td>
-                                </tr>
-                            @empty
-                                <tr>
-                                    <td colspan="5" class="text-center text-base-content/40 italic">No downtime
-                                        recorded in the last 30 days</td>
-                                </tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                </div>
+                        @empty
+                            <tr>
+                                <td colspan="5">
+                                    <x-itk.empty title="No downtime in the last 30 days" icon="circle-check" class="py-6" />
+                                </td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </x-itk.table>
             </div>
-        </div>
+        </section>
     @endif
 
-    {{-- Website List Section --}}
-    <div class="card bg-base-100 shadow-sm">
-        {{-- List Header with Controls --}}
-        <div class="card-body pb-0">
-            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-                <h2 class="card-title">Monitored Websites</h2>
-
-                <div class="flex items-center gap-3 flex-wrap lg:flex-nowrap w-full lg:w-auto">
-                    {{-- Search --}}
-                    <label class="input input-sm w-full lg:w-64">
-                        <i class="fa-solid fa-magnifying-glass"></i>
-                        <input type="search" wire:model.live.debounce.300ms="siteSearch" class="grow"
-                            placeholder="Search" />
-                    </label>
-
-                    {{-- Status Filter --}}
-                    <select class="select select-sm w-full lg:w-auto" wire:model.live="statusFilter">
-                        <option value="">All Statuses</option>
-                        <option value="up">Up</option>
-                        <option value="partially_down">Partially Down</option>
-                        <option value="totally_down">Totally Down</option>
-                    </select>
-
-                    {{-- Category Filter --}}
-                    <select class="select select-sm w-full lg:w-auto" id="categoryFilter"
-                        wire:model.live="categoryFilter">
-                        <option value="">All Categories</option>
-                        @foreach ($categories as $c)
-                            <option value="{{ $c->id }}">{{ $c->name }}</option>
-                        @endforeach
-                    </select>
-
-                    {{-- View Toggle --}}
-                    <div class="join">
-                        <button wire:click="$set('viewMode', 'card')"
-                            class="join-item btn btn-sm {{ $viewMode === 'card' ? 'btn-primary' : 'btn-ghost' }}">
-                            Card
-                        </button>
-                        <button wire:click="$set('viewMode', 'table')"
-                            class="join-item btn btn-sm {{ $viewMode === 'table' ? 'btn-primary' : 'btn-ghost' }}">
-                            Table
-                        </button>
-                    </div>
-                </div>
+    {{-- Website list --}}
+    <x-itk.card title="Monitored websites">
+        <x-slot:actions>
+            <div class="relative w-full sm:w-64">
+                <x-itk.icon name="search" class="pointer-events-none absolute left-3 top-3 text-ink-muted" />
+                <x-itk.input type="search" wire:model.live.debounce.300ms="siteSearch" aria-label="Search websites"
+                    placeholder="Search by name" class="pl-10" />
             </div>
-        </div>
 
-        {{-- Site List Content --}}
-        <div class="card-body pt-0">
-            @if ($sites->isEmpty())
-                <div class="text-center py-8 text-base-content/50">
-                    <svg class="mx-auto w-12 h-12 text-base-content/30 mb-3" fill="none" stroke="currentColor"
-                        viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9" />
-                    </svg>
-                    <p class="text-sm">No websites available</p>
-                </div>
-            @elseif($viewMode === 'card')
-                {{-- Card View --}}
-                <div
-                    class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-8 gap-3">
+            <x-itk.select wire:model.live="statusFilter" aria-label="Filter by status" class="w-full sm:w-auto">
+                <option value="">All statuses</option>
+                <option value="up">Up</option>
+                <option value="partially_down">Partially down</option>
+                <option value="totally_down">Down</option>
+            </x-itk.select>
+
+            <x-itk.select id="categoryFilter" wire:model.live="categoryFilter" aria-label="Filter by category"
+                class="w-full sm:w-auto">
+                <option value="">All categories</option>
+                @foreach ($categories as $c)
+                    <option value="{{ $c->id }}">{{ $c->name }}</option>
+                @endforeach
+            </x-itk.select>
+
+            <x-itk.toggle-group label="View" model="viewMode" :value="$viewMode" :options="[
+                'card' => ['icon' => 'layout-grid', 'label' => 'Card view'],
+                'table' => ['icon' => 'table', 'label' => 'Table view'],
+            ]" />
+        </x-slot:actions>
+
+        @if ($sites->isEmpty())
+            <x-itk.empty title="No websites found" icon="globe">
+                Try another search or filter, or add a website in the website manager.
+            </x-itk.empty>
+        @elseif($viewMode === 'card')
+            <ul class="itk-grid-tiles">
+                @foreach ($sites as $site)
+                    @php $cardAvgTime = $siteMetrics[$site->id]['avg_response_time_24h'] ?? 0; @endphp
+                    <li>
+                        <button type="button" wire:click="selectSite({{ $site->id }})"
+                            @if ($selectedSiteId === $site->id) aria-current="true" @endif
+                            class="grid content-start gap-1.5 w-full h-full p-3 text-left bg-surface border border-line rounded-md shadow-1 hover:shadow-2 hover:border-line-strong transition-shadow duration-120 cursor-pointer aria-[current=true]:bg-primary-soft aria-[current=true]:border-link">
+                            <span class="text-callout font-semibold text-ink truncate" title="{{ $site->name }}">{{ $site->name }}</span>
+                            <x-itk.status-badge :status="$site->status" :monitored="$site->is_monitored" class="justify-self-start" />
+                            <span class="text-footnote text-ink-muted tabular-nums">
+                                {{ $cardAvgTime > 0 ? 'Avg ' . number_format($cardAvgTime, 0) . ' ms' : 'No response data' }}
+                            </span>
+                            @if ($site->responsiblePerson)
+                                <span class="text-footnote text-ink-muted truncate" title="{{ $site->responsiblePerson->name }}">
+                                    {{ $site->responsiblePerson->name }}
+                                </span>
+                            @endif
+                        </button>
+                    </li>
+                @endforeach
+            </ul>
+        @else
+            <x-itk.table caption="Monitored websites" hide-caption caption-id="sites-table-caption">
+                <thead>
+                    <tr>
+                        <th scope="col">Website</th>
+                        <th scope="col">HTTP code</th>
+                        <th scope="col">Status</th>
+                        <th scope="col" class="itk-num">Avg response (24h)</th>
+                        <th scope="col">Responsible person</th>
+                    </tr>
+                </thead>
+                <tbody>
                     @foreach ($sites as $site)
                         @php
-                            $cardBorder = match ($site->status) {
-                                \App\Enums\SiteStatus::Up => 'border-l-success',
-                                \App\Enums\SiteStatus::PartiallyDown => 'border-l-warning',
-                                \App\Enums\SiteStatus::TotallyDown => 'border-l-error',
-                            };
-                            $cardBadge = match ($site->status) {
-                                \App\Enums\SiteStatus::Up => 'badge-success',
-                                \App\Enums\SiteStatus::PartiallyDown => 'badge-warning',
-                                \App\Enums\SiteStatus::TotallyDown => 'badge-error',
-                            };
-                            $cardStatusText = match ($site->status) {
-                                \App\Enums\SiteStatus::Up => 'Up',
-                                \App\Enums\SiteStatus::PartiallyDown => 'Partially Down',
-                                \App\Enums\SiteStatus::TotallyDown => 'Totally Down',
-                            };
-                            if (!$site->is_monitored) {
-                                $cardBorder = 'border-l-base-300';
-                                $cardBadge = 'badge-ghost';
-                                $cardStatusText = 'Not Monitored';
-                            }
+                            $httpCode = $siteMetrics[$site->id]['latest_http_code'] ?? null;
+                            $avgTime24h = $siteMetrics[$site->id]['avg_response_time_24h'] ?? 0;
+                            $httpOk = $httpCode !== null && $httpCode >= 200 && $httpCode < 400;
                         @endphp
-                        <div wire:click="selectSite({{ $site->id }})"
-                            class="card bg-base-100 shadow-sm border-l-4 {{ $cardBorder }} p-3 cursor-pointer hover:shadow-md transition-shadow">
-                            <p class="text-xs font-semibold text-base-content truncate" title="{{ $site->name }}">
-                                {{ $site->name }}</p>
-                            <span class="badge {{ $cardBadge }} badge-xs mt-1.5">
-                                {{ $cardStatusText }}
+                        <tr wire:click="selectSite({{ $site->id }})" class="cursor-pointer">
+                            <th scope="row">
+                                <button type="button" wire:click.stop="selectSite({{ $site->id }})"
+                                    class="min-h-11 text-left font-semibold text-link hover:underline underline-offset-3 rounded-xs cursor-pointer">
+                                    {{ $site->name }}
+                                </button>
+                            </th>
+                            <td>
+                                @if ($httpCode !== null)
+                                    <span @class(['inline-flex items-center gap-1 tabular-nums', 'text-success' => $httpOk, 'text-error' => ! $httpOk])>
+                                        <x-itk.icon :name="$httpOk ? 'circle-check' : 'circle-x'" size="16" />
+                                        {{ $httpCode }}
+                                    </span>
+                                @else
+                                    <span class="text-ink-muted">—</span>
+                                @endif
+                            </td>
+                            <td><x-itk.status-badge :status="$site->status" :monitored="$site->is_monitored" /></td>
+                            <td class="itk-num">{{ $avgTime24h > 0 ? number_format($avgTime24h, 0) . ' ms' : '—' }}</td>
+                            <td class="text-ink-muted">{{ $site->responsiblePerson?->name ?? '—' }}</td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </x-itk.table>
+        @endif
+
+        {{-- Pagination (restyled in 2.8) --}}
+        @if ($sites->hasPages())
+            <div class="mt-4">
+                {{ $sites->links('vendor.livewire.daisy-pagination') }}
+            </div>
+        @endif
+    </x-itk.card>
+
+    {{-- Live log sheet --}}
+    @if ($showLogDrawer)
+        <x-itk.sheet title="Live checking log" title-id="live-log-title" close="$wire.toggleLogDrawer()"
+            return-focus="liveLogButton">
+            <x-slot:meta>
+                @if ($cycleInProgress || $isRefreshing)
+                    <x-itk.spinner size="16" label="Checking" class="text-link" />
+                @endif
+            </x-slot:meta>
+
+            @if ($this->cycleTotalPages > 0)
+                <div class="px-5 pt-3">
+                    <x-itk.progress label="Pages checked" :value="count($this->cycleLogs)" :max="$this->cycleTotalPages"
+                        :value-text="count($this->cycleLogs) . ' of ' . $this->cycleTotalPages" />
+                </div>
+            @endif
+
+            <div class="flex-1 overflow-y-auto px-5 py-2" role="log" aria-label="Check results" tabindex="0"
+                x-data x-init="$nextTick(() => $el.scrollTop = $el.scrollHeight)" x-effect="$el.scrollTop = $el.scrollHeight">
+                @forelse($this->cycleLogs as $log)
+                    @if ($log['http_code'] === -1)
+                        <div class="flex items-center gap-2 py-2 my-1">
+                            <div class="flex-1 border-t border-warning"></div>
+                            <span class="flex items-center gap-1 text-footnote font-semibold text-warning shrink-0">
+                                <x-itk.icon name="rotate-cw" size="16" />
+                                Retry cycle (verifying down sites)
                             </span>
-                            @php $cardAvgTime = $siteMetrics[$site->id]['avg_response_time_24h'] ?? 0; @endphp
-                            <p class="text-[10px] text-base-content/50 mt-1">
-                                {{ $cardAvgTime > 0 ? number_format($cardAvgTime, 0) . ' ms' : '—' }}
-                            </p>
-                            @if ($site->responsiblePerson)
-                                <p class="text-[10px] text-base-content/40 mt-0.5 truncate"
-                                    title="{{ $site->responsiblePerson->name }}">{{ $site->responsiblePerson->name }}
-                                </p>
+                            <div class="flex-1 border-t border-warning"></div>
+                        </div>
+                    @else
+                        <div class="flex items-center gap-2 py-1.5 border-b border-line text-footnote">
+                            <span class="text-ink-muted tabular-nums shrink-0">{{ $log['time'] }}</span>
+                            @if ($log['http_code'] === 0)
+                                <x-itk.badge tone="danger" icon="circle-x" class="shrink-0">Error</x-itk.badge>
+                            @elseif($log['http_code'] >= 200 && $log['http_code'] < 400)
+                                <x-itk.badge tone="success" icon="circle-check" class="shrink-0">{{ $log['http_code'] }}</x-itk.badge>
+                            @else
+                                <x-itk.badge tone="danger" icon="circle-x" class="shrink-0">{{ $log['http_code'] }}</x-itk.badge>
+                            @endif
+                            <span class="font-semibold text-ink truncate shrink-0 max-w-30" title="{{ $log['site'] }}">{{ $log['site'] }}</span>
+                            <span class="text-ink-muted truncate" title="{{ $log['url'] }}">{{ parse_url($log['url'], PHP_URL_PATH) ?: '/' }}</span>
+                            @if ($log['http_code'] > 0 && $log['response_time_ms'] > 0)
+                                <span class="text-ink-muted tabular-nums ml-auto shrink-0">{{ number_format($log['response_time_ms'], 0) }} ms</span>
+                            @elseif($log['http_code'] === 0)
+                                <span class="text-error ml-auto shrink-0">{{ $log['error_type'] }}</span>
                             @endif
                         </div>
-                    @endforeach
-                </div>
-            @else
-                {{-- Table View --}}
-                <div class="overflow-x-auto">
-                    <table class="table table-zebra table-sm">
-                        <thead>
-                            <tr>
-                                <th>Site Name</th>
-                                <th class="text-center">HTTP Code</th>
-                                <th class="text-center">Status</th>
-                                <th class="text-right">Avg Response Time (24h)</th>
-                                <th>Responsible Person</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($sites as $site)
-                                @php
-                                    $tableBadge = match ($site->status) {
-                                        \App\Enums\SiteStatus::Up => 'badge-success',
-                                        \App\Enums\SiteStatus::PartiallyDown => 'badge-warning',
-                                        \App\Enums\SiteStatus::TotallyDown => 'badge-error',
-                                    };
-                                    $tableStatusText = match ($site->status) {
-                                        \App\Enums\SiteStatus::Up => 'Up',
-                                        \App\Enums\SiteStatus::PartiallyDown => 'Partially Down',
-                                        \App\Enums\SiteStatus::TotallyDown => 'Totally Down',
-                                    };
-                                    if (!$site->is_monitored) {
-                                        $tableBadge = 'badge-ghost';
-                                        $tableStatusText = 'Not Monitored';
-                                    }
-                                    $httpCode = $siteMetrics[$site->id]['latest_http_code'] ?? null;
-                                    $avgTime24h = $siteMetrics[$site->id]['avg_response_time_24h'] ?? 0;
-                                @endphp
-                                <tr wire:click="selectSite({{ $site->id }})" class="cursor-pointer hover">
-                                    <td class="font-medium text-base-content">{{ $site->name }}</td>
-                                    <td class="text-center">
-                                        @if ($httpCode !== null)
-                                            <span
-                                                class="font-mono text-sm {{ $httpCode >= 200 && $httpCode < 400 ? 'text-success' : 'text-error' }}">
-                                                {{ $httpCode }}
-                                            </span>
-                                        @else
-                                            <span class="text-base-content/40">—</span>
-                                        @endif
-                                    </td>
-                                    <td class="text-center">
-                                        <span class="badge {{ $tableBadge }} badge-sm">
-                                            {{ $tableStatusText }}
-                                        </span>
-                                    </td>
-                                    <td class="text-right font-mono text-base-content/70">
-                                        {{ $avgTime24h > 0 ? number_format($avgTime24h, 0) . ' ms' : '—' }}
-                                    </td>
-                                    <td class="text-base-content/60">
-                                        {{ $site->responsiblePerson?->name ?? '—' }}
-                                    </td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            @endif
-
-            {{-- Pagination --}}
-            @if ($sites->hasPages())
-                <div class="mt-4">
-                    {{ $sites->links('vendor.livewire.daisy-pagination') }}
-                </div>
-            @endif
-        </div>
-    </div>
-
-    {{-- Live Log Drawer --}}
-    @if ($showLogDrawer)
-        <div class="fixed inset-0 z-50 flex justify-end" x-data x-init="$nextTick(() => $refs.logPanel.focus())">
-            {{-- Backdrop --}}
-            <div class="absolute inset-0 bg-black/30" wire:click="toggleLogDrawer"></div>
-
-            {{-- Drawer Panel --}}
-            <div x-ref="logPanel"
-                class="relative w-full max-w-lg bg-base-100 shadow-xl flex flex-col h-full overflow-hidden">
-                {{-- Header --}}
-                <div class="flex items-center justify-between px-4 py-3 border-b border-base-200 bg-base-200/50">
-                    <div class="flex items-center gap-2">
-                        <h3 class="font-semibold text-base-content">Live Checking Log</h3>
-                        @if ($this->cycleTotalPages > 0)
-                            <span class="badge badge-sm badge-ghost">
-                                {{ count($this->cycleLogs) }} / {{ $this->cycleTotalPages }}
-                            </span>
-                        @endif
-                        @if ($cycleInProgress || $isRefreshing)
-                            <span class="loading loading-dots loading-xs text-primary"></span>
-                        @endif
-                    </div>
-                    <button wire:click="toggleLogDrawer" class="btn btn-ghost btn-sm btn-square">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </button>
-                </div>
-
-                {{-- Progress bar --}}
-                @if ($this->cycleTotalPages > 0)
-                    @php
-                        $progress = min(100, round((count($this->cycleLogs) / $this->cycleTotalPages) * 100));
-                    @endphp
-                    <div class="px-4 pt-2">
-                        <progress class="progress progress-primary w-full" value="{{ $progress }}"
-                            max="100"></progress>
-                    </div>
-                @endif
-
-                {{-- Log Entries --}}
-                <div class="flex-1 overflow-y-auto px-4 py-2 space-y-1" x-data x-init="$nextTick(() => $el.scrollTop = $el.scrollHeight)"
-                    x-effect="$el.scrollTop = $el.scrollHeight">
-                    @forelse($this->cycleLogs as $log)
-                        @if ($log['http_code'] === -1)
-                            {{-- Retry separator --}}
-                            <div class="flex items-center gap-2 py-2 my-1">
-                                <div class="flex-1 border-t border-warning/40"></div>
-                                <span class="text-xs font-semibold text-warning shrink-0">🔄 Retry Cycle (verifying
-                                    down sites)</span>
-                                <div class="flex-1 border-t border-warning/40"></div>
-                            </div>
-                        @else
-                            <div class="flex items-center gap-2 py-1 border-b border-base-200/50 text-xs">
-                                <span class="text-base-content/40 font-mono shrink-0">{{ $log['time'] }}</span>
-                                @if ($log['http_code'] === 0)
-                                    <span class="badge badge-error badge-xs shrink-0">ERR</span>
-                                @elseif($log['http_code'] >= 200 && $log['http_code'] < 400)
-                                    <span class="badge badge-success badge-xs shrink-0">{{ $log['http_code'] }}</span>
-                                @else
-                                    <span class="badge badge-error badge-xs shrink-0">{{ $log['http_code'] }}</span>
-                                @endif
-                                <span class="font-medium text-base-content truncate shrink-0 max-w-[120px]"
-                                    title="{{ $log['site'] }}">{{ $log['site'] }}</span>
-                                <span class="text-base-content/50 truncate"
-                                    title="{{ $log['url'] }}">{{ parse_url($log['url'], PHP_URL_PATH) ?: '/' }}</span>
-                                @if ($log['http_code'] > 0 && $log['response_time_ms'] > 0)
-                                    <span
-                                        class="text-base-content/40 font-mono ml-auto shrink-0">{{ number_format($log['response_time_ms'], 0) }}ms</span>
-                                @elseif($log['http_code'] === 0)
-                                    <span class="text-error/70 ml-auto shrink-0">{{ $log['error_type'] }}</span>
-                                @endif
-                            </div>
-                        @endif
-                    @empty
-                        <div class="text-center py-8 text-base-content/40">
-                            <svg class="mx-auto w-8 h-8 mb-2" fill="none" stroke="currentColor"
-                                viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                            </svg>
-                            <p class="text-sm">No logs yet. Trigger a refresh to see live results.</p>
-                        </div>
-                    @endforelse
-                </div>
+                    @endif
+                @empty
+                    <x-itk.empty title="No checks yet" icon="clipboard-list">
+                        Select "Refresh all now" to see live results here.
+                    </x-itk.empty>
+                @endforelse
             </div>
-        </div>
+        </x-itk.sheet>
     @endif
 </div>

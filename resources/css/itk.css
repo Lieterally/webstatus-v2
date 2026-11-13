@@ -30,3 +30,17 @@
 
 /* Scrim behind drawers and dialogs */
 .itk-scrim { background: var(--itk-scrim); }
+
+/* Table (x-itk.table) */
+.itk-table { width: 100%; border-collapse: collapse; font: 400 15px/22px var(--itk-font-sans); color: var(--itk-ink); font-variant-numeric: tabular-nums; }
+.itk-table caption { text-align: left; padding: var(--itk-space-3) var(--itk-space-4); font-weight: 600; font-size: 17px; line-height: 24px; }
+.itk-table thead th { text-align: left; font: 600 13px/18px var(--itk-font-sans); color: var(--itk-ink-muted); background: var(--itk-surface-sunken); padding: var(--itk-space-3) var(--itk-space-4); border-bottom: 1px solid var(--itk-border); white-space: nowrap; }
+.itk-table td, .itk-table tbody th { padding: var(--itk-space-3) var(--itk-space-4); border-bottom: 1px solid var(--itk-border); vertical-align: middle; }
+.itk-table tbody th { text-align: left; font-weight: 600; color: var(--itk-ink); }
+.itk-table tbody tr:last-child > * { border-bottom: 0; }
+.itk-table tbody tr:hover { background: var(--itk-accent-soft); }
+.itk-table .itk-num { text-align: right; white-space: nowrap; }
+.itk-table-wrap:focus-visible { outline: 2px solid var(--itk-focus-ring); outline-offset: 2px; }
+
+/* Grid of small tiles (dashboard card view): columns follow the available width */
+.itk-grid-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--itk-space-3); }
