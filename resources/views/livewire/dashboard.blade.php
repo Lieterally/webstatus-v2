@@ -45,6 +45,7 @@
     <x-itk.page-header title="Dashboard" description="Website monitoring overview">
         <x-slot:actions>
             <x-itk.button wire:click="refreshAll" loading="refreshAll" icon="refresh-cw"
+                :disabled="$cycleInProgress || $isRefreshing || ! $monitoringEnabled"
                 x-bind:disabled="cycleInProgress || isRefreshing || !monitoringEnabled">
                 <span wire:loading.remove wire:target="refreshAll">Refresh all now</span>
                 <span wire:loading wire:target="refreshAll">Refreshing…</span>

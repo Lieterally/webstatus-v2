@@ -17,20 +17,6 @@
     <title>@yield('title', 'Webstatus') - ITK Webstatus</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
-    <link rel="stylesheet" href="{{ asset('assets/font-awesome/css/all.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/font-awesome/css/pro.min.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/font-awesome/css/sharp-duotone-thin.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/font-awesome/css/sharp-duotone-solid.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/font-awesome/css/sharp-duotone-regular.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/font-awesome/css/sharp-duotone-light.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/font-awesome/css/sharp-thin.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/font-awesome/css/sharp-solid.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/font-awesome/css/sharp-regular.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/font-awesome/css/sharp-light.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/font-awesome/css/duotone-thin.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/font-awesome/css/duotone-regular.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/font-awesome/css/duotone-light.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/font-awesome/css/woff2.css') }}">
 </head>
 
 <body class="min-h-screen bg-canvas text-ink font-sans antialiased">

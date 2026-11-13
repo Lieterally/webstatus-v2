@@ -16,86 +16,12 @@
 @font-face { font-family: 'Figtree'; src: url('../fonts/Figtree-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: swap; }
 @font-face { font-family: 'Figtree'; src: url('../fonts/Figtree-ExtraBold.ttf') format('truetype'); font-weight: 800; font-style: normal; font-display: swap; }
 
-/* ---------- DaisyUI mapped onto ITK tokens (removed in Step 2.9) ---------- */
-@plugin 'daisyui' {
-    themes: false;
-}
-
-@plugin 'daisyui/theme' {
-    name: 'light';
-    default: true;
-    prefersdark: false;
-    color-scheme: light;
-    --color-base-100: var(--itk-surface);
-    --color-base-200: var(--itk-canvas);
-    --color-base-300: var(--itk-border);
-    --color-base-content: var(--itk-ink);
-    --color-primary: var(--itk-accent);
-    --color-primary-content: var(--itk-on-accent);
-    --color-secondary: var(--itk-gold);
-    --color-secondary-content: var(--itk-on-gold);
-    --color-accent: var(--itk-accent);
-    --color-accent-content: var(--itk-on-accent);
-    --color-neutral: var(--itk-surface-inverse);
-    --color-neutral-content: var(--itk-ink-inverse);
-    --color-info: var(--itk-accent);
-    --color-info-content: var(--itk-on-accent);
-    --color-success: var(--itk-success);
-    --color-success-content: var(--itk-on-accent);
-    --color-warning: var(--itk-warning);
-    --color-warning-content: var(--itk-on-accent);
-    --color-error: var(--itk-danger-fill);
-    --color-error-content: var(--itk-on-danger);
-    --radius-selector: 0.25rem;
-    --radius-field: 0.375rem;
-    --radius-box: 0.625rem;
-    --size-selector: 0.25rem;
-    --size-field: 0.275rem;
-    --border: 1px;
-    --depth: 0;
-    --noise: 0;
-}
-
-@plugin 'daisyui/theme' {
-    name: 'dark';
-    default: false;
-    prefersdark: true;
-    color-scheme: dark;
-    /* Same mapping: the --itk-* tokens already switch values under [data-theme="dark"] */
-    --color-base-100: var(--itk-surface);
-    --color-base-200: var(--itk-canvas);
-    --color-base-300: var(--itk-border);
-    --color-base-content: var(--itk-ink);
-    --color-primary: var(--itk-accent);
-    --color-primary-content: var(--itk-on-accent);
-    --color-secondary: var(--itk-gold);
-    --color-secondary-content: var(--itk-on-gold);
-    --color-accent: var(--itk-accent);
-    --color-accent-content: var(--itk-on-accent);
-    --color-neutral: var(--itk-surface-inverse);
-    --color-neutral-content: var(--itk-ink-inverse);
-    --color-info: var(--itk-accent);
-    --color-info-content: var(--itk-on-accent);
-    --color-success: var(--itk-success);
-    --color-success-content: var(--itk-on-accent);
-    --color-warning: var(--itk-warning);
-    --color-warning-content: var(--itk-on-accent);
-    --color-error: var(--itk-danger-fill);
-    --color-error-content: var(--itk-on-danger);
-    --radius-selector: 0.25rem;
-    --radius-field: 0.375rem;
-    --radius-box: 0.625rem;
-    --size-selector: 0.25rem;
-    --size-field: 0.275rem;
-    --border: 1px;
-    --depth: 0;
-    --noise: 0;
-}
-
 /* ---------- Tailwind utilities named after ITK tokens ----------
-   primary / success / warning / error share names with DaisyUI on purpose:
-   both point at the same ITK token, so the names stay valid after DaisyUI is removed. */
+   The palette is locked: --color-*: initial removes Tailwind's default colours, so
+   off-brand classes such as bg-blue-500 or text-gray-600 no longer exist. */
 @theme inline {
+    --color-*: initial;
+
     --font-sans: var(--itk-font-sans);
     --font-mono: var(--itk-font-mono);
 
@@ -162,7 +88,7 @@
 
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 
-/* ---------- Global rules (unlayered on purpose, so they beat DaisyUI) ---------- */
+/* ---------- Global rules (unlayered on purpose, so they beat the utility layers) ---------- */
 html {
     background: var(--itk-canvas);
     color: var(--itk-ink);
@@ -175,25 +101,6 @@ html {
 
 [x-cloak] {
     display: none !important;
-}
-
-/* Fix DaisyUI drawer scroll - allow main content to scroll (remove with DaisyUI) */
-.drawer-content {
-    overflow-y: auto !important;
-}
-
-/* ---------- DaisyUI adjustments to meet the design system (remove in Step 2.9) ---------- */
-.input, .select, .textarea {
-    background-color: var(--itk-surface-sunken);
-    border-color: var(--itk-border-strong);   /* ≥3:1 control borders */
-    font-size: 1rem;                          /* 16px: no iOS zoom on focus */
-}
-.checkbox, .radio, .toggle {
-    border-color: var(--itk-border-strong);
-}
-.table :where(th) {
-    color: var(--itk-ink-muted);
-    font-weight: 600;
 }
 
 @media (prefers-reduced-motion: reduce) {
