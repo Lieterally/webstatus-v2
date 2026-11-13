@@ -103,8 +103,10 @@
             <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 {{-- Response Time Chart --}}
                 <div>
-                    <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
-                        <h3 class="text-headline text-ink">Response time</h3>
+                    <div class="grid justify-items-start gap-3 mb-3">
+                        <div class="flex items-center min-h-11">
+                            <h3 class="text-headline text-ink">Response time</h3>
+                        </div>
                         <x-itk.toggle-group label="Response time range" model="responseTimeFilter"
                             :value="$responseTimeFilter" :options="$rangeOptions" />
                     </div>
@@ -170,8 +172,8 @@
 
                 {{-- Downtime Chart --}}
                 <div>
-                    <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
-                        <div class="flex flex-wrap items-center gap-3">
+                    <div class="grid justify-items-start gap-3 mb-3">
+                        <div class="flex flex-wrap items-center gap-3 min-h-11">
                             <h3 class="text-headline text-ink">
                                 <a href="{{ route('downtime.index') }}"
                                     class="inline-flex items-center gap-1 min-h-11 text-link hover:underline underline-offset-3 rounded-xs">
@@ -518,8 +520,10 @@
             <div class="px-4 md:px-6 py-4 border-t border-line">
                 <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
                     <div>
-                        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
-                            <h3 class="text-headline text-ink">Response time</h3>
+                        <div class="grid justify-items-start gap-3 mb-3">
+                            <div class="flex items-center min-h-11">
+                                <h3 class="text-headline text-ink">Response time</h3>
+                            </div>
                             <x-itk.toggle-group label="Site response time range" model="siteResponseTimeFilter"
                                 :value="$siteResponseTimeFilter" :options="$rangeOptions" />
                         </div>
@@ -530,8 +534,8 @@
                     </div>
 
                     <div>
-                        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
-                            <div class="flex flex-wrap items-center gap-3">
+                        <div class="grid justify-items-start gap-3 mb-3">
+                            <div class="flex flex-wrap items-center gap-3 min-h-11">
                                 <h3 class="text-headline text-ink">Downtime</h3>
                                 <x-itk.badge tone="danger" icon="clock-alert">
                                     <span id="siteDowntimeTotalBadge">Total: {{ $siteData['downtimeData']['totalHours'] }}</span>
