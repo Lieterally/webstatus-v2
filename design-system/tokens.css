@@ -1,0 +1,171 @@
+/*
+ * ITK Design System — tokens for webstatus-v2
+ * Generated from design-system/tokens.json. Edit tokens.json, not this file.
+ *
+ * Every token is exposed as --itk-<name> (e.g. --itk-surface, --itk-ink, --itk-accent).
+ * The prefix is required here: DaisyUI 5 already uses --border (a width) and Tailwind v4
+ * owns --radius-* / --font-*, so unprefixed names would collide.
+ * Fonts: the Figtree @font-face rules live in resources/css/app.css (see MIGRATION.md), so Vite resolves the font files.
+ * Themes switch with data-theme="light" | "dark" on <html>, the same attribute DaisyUI uses.
+ */
+
+
+:root, [data-theme="light"] {
+  color-scheme: light;
+  --itk-itk-blue: #2982dc;
+  --itk-itk-gold: #fbb03b;
+  --itk-itk-gold-soft: #f5b75a;
+  --itk-blue-50: #eef5fd;
+  --itk-blue-100: #d9e9fb;
+  --itk-blue-200: #b3d3f6;
+  --itk-blue-300: #80b6ef;
+  --itk-blue-400: #5aa2ec;
+  --itk-blue-500: #2982dc;
+  --itk-blue-600: #1f72c9;
+  --itk-blue-700: #1a67b8;
+  --itk-blue-800: #154f8c;
+  --itk-blue-900: #0f3a68;
+  --itk-blue-950: #0a2443;
+  --itk-blue-975: #06182c;
+  --itk-gold-50: #fff7e8;
+  --itk-gold-100: #feecc8;
+  --itk-gold-300: #fdcd7a;
+  --itk-gold-700: #8a5a00;
+  --itk-gold-900: #4d3200;
+  --itk-slate-0: #ffffff;
+  --itk-slate-25: #f7f9fc;
+  --itk-slate-50: #eff3f8;
+  --itk-slate-100: #e2e8f0;
+  --itk-slate-200: #cbd4df;
+  --itk-slate-400: #7c8a9e;
+  --itk-slate-500: #66758a;
+  --itk-slate-600: #536176;
+  --itk-slate-700: #3a4656;
+  --itk-slate-800: #26313f;
+  --itk-slate-850: #1a2433;
+  --itk-slate-900: #131c29;
+  --itk-slate-950: #0c1420;
+  --itk-slate-975: #08101a;
+  --itk-slate-1000: #151b24;
+  --itk-slate-ink-dark: #e6edf5;
+  --itk-slate-muted-dark: #9aabbf;
+  --itk-slate-border-dark: #5f7390;
+  --itk-green-600: #0f7a5c;
+  --itk-green-50: #e8f6f0;
+  --itk-green-300: #5fd0a8;
+  --itk-red-600: #c2362b;
+  --itk-red-50: #fdeeed;
+  --itk-red-300: #ff8a7d;
+  --itk-canvas: var(--itk-slate-25);
+  --itk-surface: var(--itk-slate-0);
+  --itk-surface-raised: var(--itk-slate-0);
+  --itk-surface-sunken: var(--itk-slate-50);
+  --itk-surface-inverse: var(--itk-blue-950);
+  --itk-border: var(--itk-slate-100);
+  --itk-border-strong: var(--itk-slate-400);
+  --itk-ink: var(--itk-slate-1000);
+  --itk-ink-muted: var(--itk-slate-600);
+  --itk-ink-disabled: var(--itk-slate-500);
+  --itk-ink-inverse: var(--itk-slate-0);
+  --itk-accent: var(--itk-blue-700);
+  --itk-accent-hover: var(--itk-blue-600);
+  --itk-accent-pressed: var(--itk-blue-800);
+  --itk-on-accent: var(--itk-slate-0);
+  --itk-accent-text: var(--itk-blue-700);
+  --itk-accent-soft: var(--itk-blue-50);
+  --itk-accent-soft-ink: var(--itk-blue-800);
+  --itk-gold: var(--itk-itk-gold);
+  --itk-on-gold: var(--itk-blue-950);
+  --itk-focus-ring: var(--itk-blue-700);
+  --itk-success: var(--itk-green-600);
+  --itk-success-soft: var(--itk-green-50);
+  --itk-warning: var(--itk-gold-700);
+  --itk-warning-soft: var(--itk-gold-50);
+  --itk-danger: var(--itk-red-600);
+  --itk-danger-soft: var(--itk-red-50);
+  --itk-danger-fill: var(--itk-red-600);
+  --itk-on-danger: var(--itk-slate-0);
+  --itk-chart-1: var(--itk-blue-700);
+  --itk-chart-2: #b06f00;
+  --itk-chart-3: #0f8577;
+  --itk-chart-4: var(--itk-slate-500);
+  --itk-scrim: rgba(8, 16, 26, 0.48);
+  --itk-shadow-1: 0 1px 2px rgba(15, 42, 74, 0.06), 0 1px 1px rgba(15, 42, 74, 0.04);
+  --itk-shadow-2: 0 4px 12px rgba(15, 42, 74, 0.08), 0 1px 3px rgba(15, 42, 74, 0.06);
+  --itk-shadow-3: 0 16px 40px rgba(15, 42, 74, 0.16), 0 4px 10px rgba(15, 42, 74, 0.08);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --itk-canvas: var(--itk-slate-950);
+  --itk-surface: var(--itk-slate-900);
+  --itk-surface-raised: var(--itk-slate-850);
+  --itk-surface-sunken: var(--itk-slate-975);
+  --itk-surface-inverse: var(--itk-slate-0);
+  --itk-border: var(--itk-slate-800);
+  --itk-border-strong: var(--itk-slate-border-dark);
+  --itk-ink: var(--itk-slate-ink-dark);
+  --itk-ink-muted: var(--itk-slate-muted-dark);
+  --itk-ink-disabled: #6b7c92;
+  --itk-ink-inverse: var(--itk-blue-950);
+  --itk-accent: var(--itk-blue-400);
+  --itk-accent-hover: var(--itk-blue-300);
+  --itk-accent-pressed: #3c8fe0;
+  --itk-on-accent: var(--itk-blue-975);
+  --itk-accent-text: var(--itk-blue-300);
+  --itk-accent-soft: #12294a;
+  --itk-accent-soft-ink: var(--itk-blue-300);
+  --itk-gold: var(--itk-itk-gold);
+  --itk-on-gold: var(--itk-blue-950);
+  --itk-focus-ring: var(--itk-blue-300);
+  --itk-success: var(--itk-green-300);
+  --itk-success-soft: #0f2b25;
+  --itk-warning: var(--itk-gold-300);
+  --itk-warning-soft: #2e2410;
+  --itk-danger: var(--itk-red-300);
+  --itk-danger-soft: #33171a;
+  --itk-danger-fill: var(--itk-red-300);
+  --itk-on-danger: #2a0c0a;
+  --itk-chart-1: var(--itk-blue-400);
+  --itk-chart-2: var(--itk-itk-gold);
+  --itk-chart-3: #3fc1ad;
+  --itk-chart-4: var(--itk-slate-muted-dark);
+  --itk-scrim: rgba(0, 0, 0, 0.6);
+  --itk-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --itk-shadow-2: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --itk-shadow-3: 0 16px 48px rgba(0, 0, 0, 0.6);
+}
+
+:root {
+  --itk-space-0-5: 2px;
+  --itk-space-1: 4px;
+  --itk-space-2: 8px;
+  --itk-space-3: 12px;
+  --itk-space-4: 16px;
+  --itk-space-5: 20px;
+  --itk-space-6: 24px;
+  --itk-space-8: 32px;
+  --itk-space-10: 40px;
+  --itk-space-12: 48px;
+  --itk-space-16: 64px;
+  --itk-space-24: 96px;
+  --itk-radius-xs: 4px;
+  --itk-radius-sm: 6px;
+  --itk-radius-md: 10px;
+  --itk-radius-lg: 16px;
+  --itk-radius-full: 9999px;
+  --itk-duration-fast: 120ms;
+  --itk-duration-base: 200ms;
+  --itk-duration-slow: 320ms;
+  --itk-z-sticky: 100;
+  --itk-z-overlay: 200;
+  --itk-z-dialog: 300;
+  --itk-z-toast: 400;
+  --itk-bp-sm: 640px;
+  --itk-bp-md: 768px;
+  --itk-bp-lg: 1024px;
+  --itk-bp-xl: 1280px;
+  --itk-bp-2xl: 1440px;
+  --itk-font-sans: Figtree, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --itk-font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+}
