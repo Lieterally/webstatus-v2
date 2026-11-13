@@ -399,15 +399,20 @@ class Dashboard extends Component
             ->get()
             ->keyBy('page_id');
 
-        return $site->pages->map(fn($page) => [
-            'page_id'          => $page->id,
-            'path'             => $page->path,
-            'full_url'         => rtrim($site->base_url, '/') . $page->path,
-            'http_code'        => $latestResults[$page->id]?->http_code ?? null,
-            'response_time_ms' => $latestResults[$page->id]?->response_time_ms ?? null,
-            'error_type'       => $latestResults[$page->id]?->error_type?->value ?? null,
-            'checked_at'       => $latestResults[$page->id]?->checked_at?->format('Y-m-d H:i:s') ?? null,
-        ])->toArray();
+        // A page that has never been checked has no entry; get() returns null for it.
+        return $site->pages->map(function ($page) use ($site, $latestResults) {
+            $latest = $latestResults->get($page->id);
+
+            return [
+                'page_id'          => $page->id,
+                'path'             => $page->path,
+                'full_url'         => rtrim($site->base_url, '/') . $page->path,
+                'http_code'        => $latest?->http_code,
+                'response_time_ms' => $latest?->response_time_ms,
+                'error_type'       => $latest?->error_type?->value,
+                'checked_at'       => $latest?->checked_at?->format('Y-m-d H:i:s'),
+            ];
+        })->toArray();
     }
 
     /**
