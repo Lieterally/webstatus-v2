@@ -3,8 +3,7 @@ import TomSelect from 'tom-select';
 import ApexCharts from 'apexcharts';
 import { applyChartDefaults, itkChartColors, itkAlpha, itkToken } from './itk-theme';
 
-// Import Tom Select CSS
-import 'tom-select/dist/css/tom-select.css';
+// Tom Select styles are imported in app.css, followed by the ITK theme (tom-select-itk.css)
 
 // Make Chart.js available globally for Blade components
 window.Chart = Chart;

@@ -1,0 +1,44 @@
+/* Tom Select in the ITK Combobox look. Loaded after Tom Select's own stylesheet. */
+.ts-wrapper .ts-control {
+    min-height: 44px;
+    padding: 0 var(--itk-space-3);
+    display: flex;
+    align-items: center;
+    background: var(--itk-surface-sunken);
+    border: 1px solid var(--itk-border-strong);
+    border-radius: var(--itk-radius-sm);
+    box-shadow: none;
+    color: var(--itk-ink);
+    font: 400 16px/24px var(--itk-font-sans);
+}
+.ts-wrapper .ts-control:hover { border-color: var(--itk-ink-muted); }
+.ts-wrapper.focus .ts-control {
+    outline: 2px solid var(--itk-focus-ring);
+    outline-offset: 2px;
+    box-shadow: none;
+}
+.ts-wrapper .ts-control input { color: var(--itk-ink); font-size: 16px; }
+.ts-wrapper .ts-control input::placeholder { color: var(--itk-ink-muted); }
+.ts-wrapper.multi .ts-control > .item {
+    background: var(--itk-accent-soft);
+    color: var(--itk-accent-soft-ink);
+    border: 0;
+    border-radius: var(--itk-radius-xs);
+}
+.ts-wrapper.disabled .ts-control { color: var(--itk-ink-disabled); border-color: var(--itk-border); opacity: 1; }
+.ts-dropdown {
+    margin-top: 6px;
+    background: var(--itk-surface-raised);
+    color: var(--itk-ink);
+    border: 1px solid var(--itk-border);
+    border-radius: var(--itk-radius-md);
+    box-shadow: var(--itk-shadow-3);
+    overflow: hidden;
+    font: 400 16px/24px var(--itk-font-sans);
+}
+.ts-dropdown .option { min-height: 44px; display: flex; align-items: center; padding: 0 var(--itk-space-3); }
+.ts-dropdown .active,
+.ts-dropdown .option:hover { background: var(--itk-accent-soft); color: var(--itk-accent-soft-ink); }
+.ts-dropdown .selected { font-weight: 600; }
+.ts-dropdown .no-results,
+.ts-dropdown .optgroup-header { color: var(--itk-ink-muted); background: transparent; }
