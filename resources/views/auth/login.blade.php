@@ -54,7 +54,14 @@
             </form>
         </div>
 
-        <p class="text-center text-footnote text-ink-muted mt-6">
+        <p class="text-center mt-5">
+            <a href="{{ route('status') }}"
+                class="inline-flex items-center gap-1.5 min-h-11 text-callout text-link hover:underline underline-offset-3 rounded-xs">
+                <x-itk.icon name="radio-tower" size="16" />View service status
+            </a>
+        </p>
+
+        <p class="text-center text-footnote text-ink-muted mt-2">
             &copy; {{ date('Y') }} Institut Teknologi Kalimantan
         </p>
     </main>

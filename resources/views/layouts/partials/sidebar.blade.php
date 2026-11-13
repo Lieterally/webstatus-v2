@@ -58,5 +58,16 @@
                 </x-itk.sidebar-link>
             </ul>
         </div>
+
+        <div>
+            <h2 class="mx-3 mt-2 mb-1 text-label uppercase text-ink-muted">Public</h2>
+            <ul class="grid gap-0.5">
+                <x-itk.sidebar-link :href="route('status')" icon="radio-tower" target="_blank" rel="noopener">
+                    <span class="inline-flex items-center gap-1.5">
+                        Status page<x-itk.icon name="external-link" size="14" class="text-ink-muted" /><span class="sr-only"> (opens in a new tab)</span>
+                    </span>
+                </x-itk.sidebar-link>
+            </ul>
+        </div>
     </nav>
 </aside>
