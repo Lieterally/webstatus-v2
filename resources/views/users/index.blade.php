@@ -1,139 +1,84 @@
 @extends('layouts.app')
 
-@section('title', 'User Manager')
+@section('title', 'User manager')
 
 @section('content')
-    <div class="flex items-center justify-between mb-6">
-        <div>
-            <h1 class="text-2xl font-bold text-base-content">User Manager</h1>
-            <p class="text-sm text-base-content/60 mt-1">Manage system users and roles</p>
-        </div>
-        <a href="{{ route('users.create') }}" class="btn btn-primary btn-sm">
-            Add User
-        </a>
-    </div>
+    <x-itk.page-header title="User manager" description="Manage who can sign in and what they can do.">
+        <x-slot:actions>
+            <x-itk.button :href="route('users.create')" icon="plus">Add user</x-itk.button>
+        </x-slot:actions>
+    </x-itk.page-header>
 
-    <div class="card bg-base-100 shadow-sm" x-data="deleteModal()">
-        <div class="card-body p-0">
-            <div class="overflow-x-auto">
-                <table class="table table-zebra">
-                    <thead>
+    <div x-data="{ target: { name: '', url: '' }, confirmDelete(name, url) { this.target = { name, url }; $refs.confirmDialog.showModal(); } }">
+        @if ($users->isEmpty())
+            <x-itk.card>
+                <x-itk.empty title="No users yet" icon="users">
+                    <x-slot:action>
+                        <x-itk.button :href="route('users.create')" icon="plus">Add user</x-itk.button>
+                    </x-slot:action>
+                    Add a user so they can sign in.
+                </x-itk.empty>
+            </x-itk.card>
+        @else
+            <x-itk.table caption="Users" hide-caption caption-id="users-caption" class="shadow-1">
+                <thead>
+                    <tr>
+                        <th scope="col">Username</th>
+                        <th scope="col">Role</th>
+                        <th scope="col" class="itk-num"><span class="sr-only">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($users as $user)
+                        @php
+                            $isOwnAccount = $user->id === auth()->id();
+                            $isLastSuperAdmin = $user->role === 'super_admin' && $superAdminCount <= 1;
+                            $canDelete = ! $isOwnAccount && ! $isLastSuperAdmin;
+                        @endphp
                         <tr>
-                            <th>Username</th>
-                            <th>Role</th>
-                            <th class="text-right">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @forelse($users as $user)
-                            <tr>
-                                <td class="font-medium">
+                            <th scope="row">
+                                <span class="flex flex-wrap items-center gap-2">
                                     {{ $user->username }}
-                                    @if ($user->id === auth()->id())
-                                        <span class="badge badge-ghost badge-sm ml-2">You</span>
+                                    @if ($isOwnAccount)
+                                        <x-itk.badge tone="neutral">You</x-itk.badge>
                                     @endif
-                                </td>
-                                <td>
-                                    <span
-                                        class="badge {{ $user->role === 'super_admin' ? 'badge-secondary' : 'badge-primary' }} badge-sm">
-                                        {{ $user->role === 'super_admin' ? 'Super Admin' : 'Admin' }}
-                                    </span>
-                                </td>
-                                <td class="text-right space-x-2">
-                                    <a href="{{ route('users.edit', $user) }}" class="btn btn-ghost btn-xs">Edit</a>
-                                    @php
-                                        $isOwnAccount = $user->id === auth()->id();
-                                        $isLastSuperAdmin = $user->role === 'super_admin' && $superAdminCount <= 1;
-                                        $canDelete = !$isOwnAccount && !$isLastSuperAdmin;
-                                    @endphp
+                                </span>
+                            </th>
+                            <td>
+                                @if ($user->role === 'super_admin')
+                                    <x-itk.badge tone="info" icon="shield">Super admin</x-itk.badge>
+                                @else
+                                    <x-itk.badge tone="neutral" icon="user">Admin</x-itk.badge>
+                                @endif
+                            </td>
+                            <td class="itk-num">
+                                <div class="inline-flex gap-2">
+                                    <x-itk.button variant="ghost" size="sm" icon="pencil" :href="route('users.edit', $user)"
+                                        :aria-label="'Edit ' . $user->username">Edit</x-itk.button>
                                     @if ($canDelete)
-                                        <button type="button"
-                                            @click="openModal('{{ $user->username }}', '{{ route('users.destroy', $user) }}')"
-                                            class="btn btn-ghost btn-xs text-error">
+                                        <x-itk.button variant="ghost" size="sm" icon="trash-2" class="text-error hover:bg-error-soft"
+                                            :aria-label="'Delete ' . $user->username"
+                                            x-on:click="confirmDelete({{ Js::from($user->username) }}, {{ Js::from(route('users.destroy', $user)) }})">
                                             Delete
-                                        </button>
+                                        </x-itk.button>
                                     @else
-                                        <span class="btn btn-ghost btn-xs btn-disabled"
-                                            title="{{ $isOwnAccount ? 'You cannot delete your own account' : 'Cannot delete the last Super Admin' }}">Delete</span>
+                                        <x-itk.tooltip :id="'cannot-delete-' . $user->id"
+                                            :content="$isOwnAccount ? 'You cannot delete your own account.' : 'You cannot delete the last super admin.'">
+                                            <x-itk.button variant="ghost" size="sm" icon="trash-2" aria-disabled="true"
+                                                aria-describedby="cannot-delete-{{ $user->id }}">Delete</x-itk.button>
+                                        </x-itk.tooltip>
                                     @endif
-                                </td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td colspan="3" class="text-center text-base-content/60">No users found.</td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
-        </div>
+                                </div>
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </x-itk.table>
+        @endif
 
-        {{-- Delete Confirmation Modal --}}
-        <div x-show="showModal" x-cloak class="modal modal-open" x-transition:enter="transition ease-out duration-200"
-            x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-            x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100"
-            x-transition:leave-end="opacity-0">
-            {{-- Backdrop --}}
-            <div class="modal-backdrop" @click="closeModal()"></div>
-
-            {{-- Modal Content --}}
-            <div class="modal-box" x-transition:enter="transition ease-out duration-200"
-                x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
-                x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 scale-100"
-                x-transition:leave-end="opacity-0 scale-95" @keydown.escape.window="closeModal()">
-                <div class="flex items-start gap-4">
-                    {{-- Warning Icon --}}
-                    <div class="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-error/10">
-                        <svg class="w-5 h-5 text-error" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                        </svg>
-                    </div>
-
-                    <div class="flex-1">
-                        <h3 class="text-lg font-semibold text-base-content">Delete User</h3>
-                        <p class="mt-2 text-sm text-base-content/70">
-                            Are you sure you want to delete <span class="font-medium text-base-content"
-                                x-text="itemName"></span>? This action cannot be undone.
-                        </p>
-                    </div>
-                </div>
-
-                <div class="modal-action">
-                    <button type="button" @click="closeModal()" class="btn btn-ghost">
-                        Cancel
-                    </button>
-                    <form :action="deleteUrl" method="POST">
-                        @csrf
-                        @method('DELETE')
-                        <button type="submit" class="btn btn-error">
-                            Delete User
-                        </button>
-                    </form>
-                </div>
-            </div>
-        </div>
+        <x-itk.alert-dialog action="target.url" confirm-label="Delete user" id="delete-user">
+            <x-slot:heading>Delete <span x-text="target.name"></span>?</x-slot:heading>
+            They can no longer sign in. This cannot be undone.
+        </x-itk.alert-dialog>
     </div>
-
-    @push('scripts')
-        <script>
-            function deleteModal() {
-                return {
-                    showModal: false,
-                    itemName: '',
-                    deleteUrl: '',
-                    openModal(name, url) {
-                        this.itemName = name;
-                        this.deleteUrl = url;
-                        this.showModal = true;
-                    },
-                    closeModal() {
-                        this.showModal = false;
-                        this.itemName = '';
-                        this.deleteUrl = '';
-                    }
-                };
-            }
-        </script>
-    @endpush
 @endsection

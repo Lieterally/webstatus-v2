@@ -48,3 +48,8 @@
 
 /* Native dialogs (x-itk.alert-dialog) */
 dialog.itk-dialog::backdrop { background: var(--itk-scrim); }
+
+/* Switch thumb (x-itk.switch) */
+.itk-switch-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: var(--itk-radius-full); background: var(--itk-ink-muted); transition: transform var(--itk-duration-base); }
+input:checked + .itk-switch-track::after { transform: translateX(18px); background: var(--itk-on-accent); }
+@media (forced-colors: active) { .itk-switch-track, .itk-check-box { border-color: ButtonText; } }

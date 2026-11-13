@@ -1,55 +1,27 @@
 @extends('layouts.app')
 
-@section('title', 'Add IT Staff')
+@section('title', 'Add IT staff')
 
 @section('content')
-    <div class="mb-6">
-        <a href="{{ route('it-staff.index') }}" class="btn btn-ghost btn-sm">&larr; Back to IT Staff</a>
-        <h1 class="text-2xl font-bold text-base-content mt-2">Add IT Staff</h1>
-    </div>
+    <x-itk.back-link :href="route('it-staff.index')">IT staff manager</x-itk.back-link>
+    <x-itk.page-header title="Add IT staff" class="mt-1" />
 
-    <div class="card bg-base-100 shadow-sm max-w-lg">
-        <div class="card-body">
-            <form method="POST" action="{{ route('it-staff.store') }}">
-                @csrf
+    <x-itk.card class="max-w-lg">
+        <form method="POST" action="{{ route('it-staff.store') }}" class="grid gap-5">
+            @csrf
 
-                <div class="form-control mb-4">
-                    <label class="label" for="name">
-                        <span class="label-text">Name</span>
-                    </label>
-                    <input type="text" name="name" id="name" value="{{ old('name') }}"
-                        class="input input-bordered w-full @error('name') input-error @enderror" required maxlength="100"
-                        autofocus>
-                    @error('name')
-                        <label class="label">
-                            <span class="label-text-alt text-error">{{ $message }}</span>
-                        </label>
-                    @enderror
-                </div>
+            <x-itk.field name="name" label="Name" required>
+                <x-itk.input :value="old('name')" maxlength="100" autocomplete="off" autofocus />
+            </x-itk.field>
 
-                <div class="form-control mb-4">
-                    <label class="label" for="position">
-                        <span class="label-text">Position</span>
-                    </label>
-                    <input type="text" name="position" id="position" value="{{ old('position') }}"
-                        class="input input-bordered w-full @error('position') input-error @enderror" required
-                        maxlength="100">
-                    @error('position')
-                        <label class="label">
-                            <span class="label-text-alt text-error">{{ $message }}</span>
-                        </label>
-                    @enderror
-                </div>
+            <x-itk.field name="position" label="Position" required>
+                <x-itk.input :value="old('position')" maxlength="100" autocomplete="off" />
+            </x-itk.field>
 
-                <div class="divider"></div>
-
-                <div class="flex items-center justify-end gap-3">
-                    <a href="{{ route('it-staff.index') }}" class="btn btn-ghost">Cancel</a>
-                    <button type="submit" class="btn btn-primary">
-                        Create
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
+            <div class="flex flex-wrap items-center justify-end gap-3 pt-5 border-t border-line">
+                <x-itk.button variant="secondary" :href="route('it-staff.index')">Cancel</x-itk.button>
+                <x-itk.button type="submit">Add IT staff</x-itk.button>
+            </div>
+        </form>
+    </x-itk.card>
 @endsection

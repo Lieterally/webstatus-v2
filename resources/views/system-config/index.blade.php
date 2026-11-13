@@ -1,154 +1,72 @@
 @extends('layouts.app')
 
-@section('title', 'System Configuration')
+@section('title', 'System config')
 
 @section('content')
-    <div class="mb-6">
-        <h1 class="text-2xl font-bold text-base-content">System Configuration</h1>
-        <p class="text-sm text-base-content/60 mt-1">Configure monitoring cycle interval, notification settings, and health
-            check parameters</p>
-    </div>
+    <x-itk.page-header title="System config"
+        description="Set the monitoring cycle, alert repeats and health check limits." />
 
-    <div class="card bg-base-100 shadow-sm max-w-lg">
-        <div class="card-body">
-            <form method="POST" action="{{ route('system-config.update') }}">
-                @csrf
-                @method('PUT')
+    <x-itk.card class="max-w-lg">
+        <form method="POST" action="{{ route('system-config.update') }}" class="grid gap-5">
+            @csrf
+            @method('PUT')
 
-                {{-- Global Monitoring Toggle --}}
-                <div class="form-control mb-6">
-                    <input type="hidden" name="is_monitoring" value="0">
-                    <label class="label cursor-pointer justify-start gap-3" for="is_monitoring">
-                        <input type="checkbox" name="is_monitoring" id="is_monitoring" value="1"
-                            class="toggle toggle-primary" @checked(old('is_monitoring', $isMonitoring))>
-                        <span class="label-text">Run monitoring cycles</span>
-                    </label>
-
-                    <p class="text-sm text-base-content/70">
-                        When off, no site is checked and no down alerts are sent. Turning this off closes all open
-                        outages.
+            {{-- Global monitoring switch, in a list row --}}
+            <div>
+                <ul class="bg-surface border border-line rounded-md">
+                    <li class="px-4">
+                        <x-itk.switch name="is_monitoring" label="Run monitoring cycles" unchecked="0"
+                            :checked="(bool) old('is_monitoring', $isMonitoring)"
+                            description="When off, no website is checked and no down alerts are sent. Turning this off closes all open outages." />
+                    </li>
+                </ul>
+                @error('is_monitoring')
+                    <p class="flex items-start gap-1 text-footnote font-medium text-error mt-1">
+                        <x-itk.icon name="circle-alert" size="16" class="mt-px" />{{ $message }}
                     </p>
+                @enderror
+            </div>
 
-                    @error('is_monitoring')
-                        <label class="label">
-                            <span class="label-text-alt text-error">{{ $message }}</span>
-                        </label>
-                    @enderror
-                </div>
+            <x-itk.field name="cycle_interval_minutes" label="Cycle interval (minutes)"
+                hint="How often every website is checked. 5 to 1440 minutes." required>
+                <x-itk.input type="number" :value="old('cycle_interval_minutes', $cycleInterval)" min="5" max="1440"
+                    step="1" inputmode="numeric" />
+            </x-itk.field>
 
-                {{-- Cycle Interval --}}
-                <div class="form-control mb-6">
-                    <label class="label" for="cycle_interval_minutes">
-                        <span class="label-text">Cycle Interval (minutes)</span>
-                    </label>
-                    <input type="number" name="cycle_interval_minutes" id="cycle_interval_minutes"
-                        value="{{ old('cycle_interval_minutes', $cycleInterval) }}" class="input input-bordered w-full"
-                        required min="5" max="1440" step="1">
+            <x-itk.field name="notification_cycle_threshold" label="Repeat down alerts every (cycles)"
+                hint="Cycles between repeated down alerts for the same website. 1 to 100." required>
+                <x-itk.input type="number" :value="old('notification_cycle_threshold', $notificationCycleThreshold)"
+                    min="1" max="100" step="1" inputmode="numeric" />
+            </x-itk.field>
 
-                    <p class="text-sm text-base-content/70">
-                        How often the system checks all websites. Range:
-                        5–1440 minutes.
+            <fieldset class="grid gap-5 pt-5 border-t border-line">
+                <legend class="text-headline text-ink pt-5 float-left w-full">Health checks</legend>
 
-                    </p>
+                <x-itk.field name="connection_timeout_seconds" label="Connection timeout (seconds)"
+                    hint="Longest wait to open a connection. Past this, the website counts as unreachable. 1 to 60 seconds."
+                    required>
+                    <x-itk.input type="number" :value="old('connection_timeout_seconds', $connectionTimeout)" min="1"
+                        max="60" step="1" inputmode="numeric" />
+                </x-itk.field>
 
-                    @error('cycle_interval_minutes')
-                        <label class="label">
-                            <span class="label-text-alt text-error">{{ $message }}</span>
-                        </label>
-                    @enderror
-                </div>
+                <x-itk.field name="response_timeout_seconds" label="Response timeout (seconds)"
+                    hint="Longest wait for a response after connecting. Slow websites may time out. 5 to 120 seconds."
+                    required>
+                    <x-itk.input type="number" :value="old('response_timeout_seconds', $responseTimeout)" min="5"
+                        max="120" step="1" inputmode="numeric" />
+                </x-itk.field>
 
-                {{-- Notification Cycle Threshold --}}
-                <div class="form-control mb-6">
-                    <label class="label" for="notification_cycle_threshold">
-                        <span class="label-text">Notification Cycle Threshold</span>
-                    </label>
-                    <input type="number" name="notification_cycle_threshold" id="notification_cycle_threshold"
-                        value="{{ old('notification_cycle_threshold', $notificationCycleThreshold) }}"
-                        class="input input-bordered w-full" required min="1" max="100" step="1">
-                    <p class="text-sm text-base-content/70">
-                        Number of cycles between repeated down
-                        notifications. Range: 1–100 cycles.
+                <x-itk.field name="concurrency_limit" label="Concurrency limit"
+                    hint="Most requests sent at once per batch. Higher is faster but uses more resources. 5 to 100."
+                    required>
+                    <x-itk.input type="number" :value="old('concurrency_limit', $concurrencyLimit)" min="5" max="100"
+                        step="1" inputmode="numeric" />
+                </x-itk.field>
+            </fieldset>
 
-                    </p>
-                    @error('notification_cycle_threshold')
-                        <label class="label">
-                            <span class="label-text-alt text-error">{{ $message }}</span>
-                        </label>
-                    @enderror
-                </div>
-
-                {{-- Divider for Health Check Settings --}}
-                <div class="divider text-sm text-base-content/60 mb-6">Health Check Settings</div>
-
-                {{-- Connection Timeout --}}
-                <div class="form-control mb-6">
-                    <label class="label" for="connection_timeout_seconds">
-                        <span class="label-text">Connection Timeout (seconds)</span>
-                    </label>
-                    <input type="number" name="connection_timeout_seconds" id="connection_timeout_seconds"
-                        value="{{ old('connection_timeout_seconds', $connectionTimeout) }}"
-                        class="input input-bordered w-full" required min="1" max="60" step="1">
-                    <p class="text-sm text-base-content/70">
-                        Max time to establish a TCP connection. If
-                        exceeded, the site is unreachable. Range: 1–60 seconds.
-
-                    </p>
-                    @error('connection_timeout_seconds')
-                        <label class="label">
-                            <span class="label-text-alt text-error">{{ $message }}</span>
-                        </label>
-                    @enderror
-                </div>
-
-                {{-- Response Timeout --}}
-                <div class="form-control mb-6">
-                    <label class="label" for="response_timeout_seconds">
-                        <span class="label-text">Response Timeout (seconds)</span>
-                    </label>
-                    <input type="number" name="response_timeout_seconds" id="response_timeout_seconds"
-                        value="{{ old('response_timeout_seconds', $responseTimeout) }}" class="input input-bordered w-full"
-                        required min="5" max="120" step="1">
-                    <p class="text-sm text-base-content/70">
-                        Max time to wait for a response after connecting.
-                        Slow sites may timeout. Range: 5–120 seconds.
-
-                    </p>
-                    @error('response_timeout_seconds')
-                        <label class="label">
-                            <span class="label-text-alt text-error">{{ $message }}</span>
-                        </label>
-                    @enderror
-                </div>
-
-                {{-- Concurrency Limit --}}
-                <div class="form-control mb-6">
-                    <label class="label" for="concurrency_limit">
-                        <span class="label-text">Concurrency Limit</span>
-                    </label>
-                    <input type="number" name="concurrency_limit" id="concurrency_limit"
-                        value="{{ old('concurrency_limit', $concurrencyLimit) }}" class="input input-bordered w-full"
-                        required min="5" max="100" step="1">
-
-
-                    <p class="text-sm text-base-content/70">
-                        Max simultaneous HTTP requests per batch. Higher =
-                        faster but uses more resources. Range: 5–100.
-
-                    </p>
-                    @error('concurrency_limit')
-                        <label class="label">
-                            <span class="label-text-alt text-error">{{ $message }}</span>
-                        </label>
-                    @enderror
-                </div>
-
-                <div class="flex items-center justify-end pt-4 border-t border-base-200">
-                    <button type="submit" class="btn btn-primary">
-                        Save Configuration
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
+            <div class="flex items-center justify-end pt-5 border-t border-line">
+                <x-itk.button type="submit">Save changes</x-itk.button>
+            </div>
+        </form>
+    </x-itk.card>
 @endsection
