@@ -2,6 +2,15 @@
 <html lang="en">
 
 <head>
+    <script>
+        try {
+            var t = localStorage.getItem('itk-theme') ||
+                (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            document.documentElement.dataset.theme = t;
+        } catch (e) {
+            document.documentElement.dataset.theme = 'light';
+        }
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Webstatus ITK</title>
