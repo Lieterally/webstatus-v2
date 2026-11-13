@@ -89,8 +89,9 @@ class PublicStatusService
             ->all();
 
         return [
-            'generated_at' => $now,
-            'last_checked_at' => $lastChecked,
+            // Dates are ISO 8601 strings: the cache only unserialises plain values
+            'generated_at' => $now->toIso8601String(),
+            'last_checked_at' => $lastChecked?->toIso8601String(),
             'interval_minutes' => $intervalMinutes,
             'monitoring_enabled' => $monitoringEnabled,
             'state' => $this->overallState($siteRows, $monitoringEnabled, $stale),
@@ -151,6 +152,37 @@ class PublicStatusService
         ];
     }
 
+    /** "45 s", "11 min", "2 h 5 min", "3 d 4 h" */
+    public static function formatDuration(int $seconds): string
+    {
+        if ($seconds < 60) {
+            return $seconds . ' s';
+        }
+        $minutes = intdiv($seconds, 60);
+        if ($minutes < 60) {
+            return $minutes . ' min';
+        }
+        $hours = intdiv($minutes, 60);
+        if ($hours < 24) {
+            return $hours . ' h' . ($minutes % 60 ? ' ' . ($minutes % 60) . ' min' : '');
+        }
+
+        return intdiv($hours, 24) . ' d' . ($hours % 24 ? ' ' . ($hours % 24) . ' h' : '');
+    }
+
+    /** Brand book format: "15.50 WITA" today, "12 Nov 2026, 15.50 WITA" otherwise. */
+    public static function formatTime(\DateTimeInterface|string|null $time, \DateTimeInterface|string|null $now = null): string
+    {
+        if (! $time) {
+            return '';
+        }
+        $time = CarbonImmutable::parse($time)->setTimezone(config('app.timezone'));
+        $now = $now ? CarbonImmutable::parse($now)->setTimezone(config('app.timezone')) : CarbonImmutable::now();
+        $clock = $time->format('H.i') . ' WITA';
+
+        return $time->isSameDay($now) ? $clock : $time->format('j M Y') . ', ' . $clock;
+    }
+
     /** none = no checks that day, ok = 100%, minor = 99% or more, major = below 99%. */
     public function dayTone(?float $uptime): string
     {
@@ -189,8 +221,8 @@ class PublicStatusService
             ->map(fn (DowntimeHistory $h) => [
                 'site' => $names[$h->site_id] ?? '',
                 'state' => $h->isActive() ? 'ongoing' : ($h->wasMonitoringStopped() ? 'monitoring_stopped' : 'resolved'),
-                'started_at' => CarbonImmutable::parse($h->started_at),
-                'ended_at' => $h->ended_at ? CarbonImmutable::parse($h->ended_at) : null,
+                'started_at' => CarbonImmutable::parse($h->started_at)->toIso8601String(),
+                'ended_at' => $h->ended_at ? CarbonImmutable::parse($h->ended_at)->toIso8601String() : null,
                 'duration_seconds' => $h->getLiveDurationSeconds(),
                 'pages_count' => count($h->affected_pages ?? []),
             ])

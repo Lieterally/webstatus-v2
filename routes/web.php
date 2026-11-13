@@ -5,6 +5,7 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PublicStatusController;
 use App\Http\Controllers\SiteController;
 use App\Http\Controllers\SystemConfigController;
 use App\Http\Controllers\TelegramTargetController;
@@ -20,10 +21,16 @@ use Illuminate\Support\Facades\Route;
 | Routes accessible without authentication.
 */
 
-// Redirect root to login
-Route::get('/', function () {
-    return redirect('/login');
-});
+// Public status page (docs/PUBLIC-STATUS-PLAN.md). The data is cached, so the limit is
+// generous: a campus network puts many students behind one IP address during an outage.
+Route::get('/', [PublicStatusController::class, 'show'])
+    ->middleware('throttle:600,1')
+    ->name('status');
+
+// Same data as JSON (browsers may cache it for 60 s)
+Route::get('/status.json', [PublicStatusController::class, 'json'])
+    ->middleware('throttle:600,1')
+    ->name('status.json');
 
 // Telegram webhook endpoint (public, no auth, CSRF exempted in bootstrap/app.php)
 Route::post('/telegram/webhook', TelegramWebhookController::class)

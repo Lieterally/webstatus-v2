@@ -1,7 +1,7 @@
 <?php
 
-test('the application redirects to login', function () {
+test('the application root shows the public status page', function () {
     $response = $this->get('/');
 
-    $response->assertRedirect('/login');
+    $response->assertOk()->assertSee('ITK service status');
 });

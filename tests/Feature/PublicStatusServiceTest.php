@@ -238,3 +238,29 @@ describe('site form', function () {
         expect($site->fresh()->is_public)->toBeFalse();
     });
 });
+
+describe('page and json', function () {
+    it('holds only plain values, so the cached snapshot can be read back', function () {
+        $site = Site::factory()->create(['is_public' => true]);
+        DowntimeHistory::create(['site_id' => $site->id, 'started_at' => now()->subHour(), 'ended_at' => now(), 'status' => 'resolved', 'duration_seconds' => 3600]);
+
+        $snapshot = publicSnapshot();
+
+        expect(json_decode(json_encode($snapshot), true))->toEqual($snapshot);
+    });
+
+    it('shows the public page twice in a row, the second time from the cache', function () {
+        Site::factory()->totallyDown()->create(['is_public' => true, 'name' => 'Portal']);
+
+        $this->get('/')->assertOk()->assertSee('Some services are down')->assertSee('Portal');
+        $this->get('/')->assertOk()->assertSee('Some services are down');
+    });
+
+    it('serves status.json with a cache header', function () {
+        Site::factory()->create(['is_public' => true]);
+
+        $response = $this->getJson(route('status.json'))->assertOk()->assertJsonPath('state', 'operational');
+
+        expect($response->headers->get('Cache-Control'))->toContain('max-age=60');
+    });
+});
