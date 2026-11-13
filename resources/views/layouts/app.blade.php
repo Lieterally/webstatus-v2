@@ -91,7 +91,7 @@
 
                         <form method="POST" action="{{ route('logout') }}">
                             @csrf
-                            <x-itk.button type="submit" variant="secondary" size="sm" icon="log-out">
+                            <x-itk.button type="submit" variant="secondary" size="sm" icon="log-out" class="max-lg:min-h-11 max-lg:px-4">
                                 Log out
                             </x-itk.button>
                         </form>

@@ -41,6 +41,7 @@
 .itk-table tbody tr:last-child > * { border-bottom: 0; }
 .itk-table tbody tr:hover { background: var(--itk-accent-soft); }
 .itk-table .itk-num { text-align: right; white-space: nowrap; }
+.itk-table-wrap { position: relative; } /* keeps the sr-only caption inside the scroll frame */
 .itk-table-wrap:focus-visible { outline: 2px solid var(--itk-focus-ring); outline-offset: 2px; }
 
 /* Grid of small tiles (dashboard card view): columns follow the available width */
