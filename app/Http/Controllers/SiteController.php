@@ -45,6 +45,20 @@ class SiteController extends Controller
             $query->where('responsible_person_id', $personId);
         }
 
+        // Monitoring filter: monitored | not_monitored (anything else is ignored)
+        match (request('monitoring')) {
+            'monitored' => $query->where('is_monitored', true),
+            'not_monitored' => $query->where('is_monitored', false),
+            default => null,
+        };
+
+        // Public status page filter: public | private (anything else is ignored)
+        match (request('visibility')) {
+            'public' => $query->where('is_public', true),
+            'private' => $query->where('is_public', false),
+            default => null,
+        };
+
         // ?show=all lists every matching site on one page (still a paginator, so the view stays the same)
         $showAll = request('show') === 'all';
         $perPage = $showAll ? max(1, (clone $query)->count()) : 10;

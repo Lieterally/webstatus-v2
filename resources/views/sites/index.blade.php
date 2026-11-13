@@ -3,6 +3,10 @@
 @section('title', 'Website manager')
 
 @section('content')
+    @php
+        $filterKeys = ['search', 'category', 'person', 'monitoring', 'visibility'];
+        $hasFilters = collect($filterKeys)->contains(fn ($key) => filled(request($key)));
+    @endphp
     <div x-data="{
             target: { name: '', url: '' },
             confirmDelete(name, url) { this.target = { name, url }; $refs.confirmDialog.showModal(); },
@@ -16,14 +20,15 @@
 
             // Filters update the list in place: fetch the filtered page, swap #sites-results, update the URL.
             filtering: false,
-            hasFilters: @js((bool) (request('search') || request('category') || request('person'))),
+            hasFilters: @js($hasFilters),
+            filterKeys: @js($filterKeys),
             statusText: '',
             requestId: 0,
             async refresh() {
                 const form = $refs.filters;
                 const params = new URLSearchParams(new FormData(form));
                 for (const [key, value] of [...params]) if (value === '') params.delete(key);
-                this.hasFilters = ['search', 'category', 'person'].some((key) => params.get(key));
+                this.hasFilters = this.filterKeys.some((key) => params.get(key));
                 const url = form.getAttribute('action') + (params.toString() ? '?' + params : '');
                 const id = ++this.requestId;
                 this.filtering = true;
@@ -47,9 +52,7 @@
             },
             clearFilters() {
                 const form = $refs.filters;
-                form.querySelector('[name=search]').value = '';
-                form.querySelector('[name=category]').value = '';
-                form.querySelector('[name=person]').value = '';
+                this.filterKeys.forEach((key) => form.querySelector('[name=' + key + ']').value = '');
                 this.refresh();
                 form.querySelector('[name=search]').focus();
             },
@@ -122,12 +125,24 @@
             @endforeach
         </x-itk.select>
 
+        <x-itk.select name="monitoring" aria-label="Filter by monitoring" class="w-full sm:w-auto" x-on:change="refresh()">
+            <option value="">Monitored or not</option>
+            <option value="monitored" @selected(request('monitoring') === 'monitored')>Monitored</option>
+            <option value="not_monitored" @selected(request('monitoring') === 'not_monitored')>Not monitored</option>
+        </x-itk.select>
+
+        <x-itk.select name="visibility" aria-label="Filter by public status page" class="w-full sm:w-auto" x-on:change="refresh()">
+            <option value="">Public or private</option>
+            <option value="public" @selected(request('visibility') === 'public')>Public</option>
+            <option value="private" @selected(request('visibility') === 'private')>Private</option>
+        </x-itk.select>
+
         {{-- Filters apply as you type or choose; the button is only needed without JavaScript --}}
         <noscript><x-itk.button type="submit" variant="secondary" icon="list-filter">Apply filters</x-itk.button></noscript>
 
         {{-- Shown with a style binding, not x-show: x-show shows a frame late, so a quick show-then-hide can stick --}}
         <x-itk.button variant="ghost" icon="x" x-on:click="clearFilters()"
-            x-bind:style="hasFilters ? '' : 'display: none'" :style="request('search') || request('category') || request('person') ? null : 'display: none'">Clear filters</x-itk.button>
+            x-bind:style="hasFilters ? '' : 'display: none'" :style="$hasFilters ? null : 'display: none'">Clear filters</x-itk.button>
     </form>
 
     {{-- Announces the new result count after a filter change --}}
@@ -150,12 +165,12 @@
         <div id="sites-results" data-page-ids="{{ json_encode($sites->pluck('id')) }}" x-bind:aria-busy="filtering.toString()">
         @if ($sites->isEmpty())
             <x-itk.card>
-                @if (request('search') || request('category') || request('person'))
+                @if ($hasFilters)
                     <x-itk.empty title="No websites match these filters" icon="search">
                         <x-slot:action>
                             <x-itk.button variant="secondary" x-on:click="clearFilters()">Clear filters</x-itk.button>
                         </x-slot:action>
-                        Try another name, category or responsible person.
+                        Try another name, category, responsible person, monitoring or public setting.
                     </x-itk.empty>
                 @else
                     <x-itk.empty title="No websites yet" icon="globe">
