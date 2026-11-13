@@ -16,10 +16,10 @@ it('displays the password change form for authenticated users', function () {
     $response = $this->actingAs($this->user)->get(route('profile.password'));
 
     $response->assertStatus(200);
-    $response->assertSee('Change Password');
-    $response->assertSee('Current Password');
-    $response->assertSee('New Password');
-    $response->assertSee('Confirm New Password');
+    $response->assertSee('Change password');
+    $response->assertSee('Current password');
+    $response->assertSee('New password');
+    $response->assertSee('Confirm new password');
 });
 
 it('requires authentication to access password change page', function () {

@@ -38,7 +38,7 @@ it('displays the create telegram target form', function () {
     $response = $this->actingAs($this->superAdmin)->get(route('telegram-targets.create'));
 
     $response->assertStatus(200);
-    $response->assertSee('Add Telegram Target');
+    $response->assertSee('Add Telegram target');
 });
 
 it('stores a new telegram target with valid data', function () {
@@ -124,7 +124,7 @@ it('displays the edit telegram target form', function () {
     $response = $this->actingAs($this->superAdmin)->get(route('telegram-targets.edit', $target));
 
     $response->assertStatus(200);
-    $response->assertSee('Edit Telegram Target');
+    $response->assertSee('Edit Telegram target');
     $response->assertSee('123456789');
 });
 

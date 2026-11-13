@@ -28,7 +28,7 @@ it('displays the create category form', function () {
     $response = $this->actingAs($this->user)->get(route('categories.create'));
 
     $response->assertStatus(200);
-    $response->assertSee('Create Category');
+    $response->assertSee('Add category');
 });
 
 it('stores a new category with valid name', function () {
@@ -66,7 +66,7 @@ it('displays the edit category form', function () {
     $response = $this->actingAs($this->user)->get(route('categories.edit', $category));
 
     $response->assertStatus(200);
-    $response->assertSee('Edit Category');
+    $response->assertSee('Edit ' . $category->name);
     $response->assertSee('Academic');
 });
 

@@ -318,7 +318,7 @@ describe('downtime figures', function () {
             ->get(route('downtime.index', ['status' => 'monitoring_stopped']))
             ->assertOk()
             ->assertSee('Paused Site')
-            ->assertSee('Monitoring Stopped');
+            ->assertSee('Monitoring stopped');
 
         expect($response->viewData('totalDowntimeSeconds'))->toBe(1800);
     });

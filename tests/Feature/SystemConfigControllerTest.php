@@ -25,7 +25,7 @@ it('displays the system configuration page for super_admin', function () {
     $response = $this->actingAs($this->superAdmin)->get(route('system-config.index'));
 
     $response->assertStatus(200);
-    $response->assertSee('System Configuration');
+    $response->assertSee('System config');
     $response->assertSee('10');
     $response->assertSee('6');
 });

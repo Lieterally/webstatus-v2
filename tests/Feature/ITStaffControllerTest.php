@@ -42,7 +42,7 @@ it('displays the create IT staff form', function () {
     $response = $this->actingAs($this->superAdmin)->get(route('it-staff.create'));
 
     $response->assertStatus(200);
-    $response->assertSee('Add IT Staff');
+    $response->assertSee('Add IT staff');
 });
 
 it('stores a new IT staff member with valid data', function () {
@@ -114,7 +114,7 @@ it('displays the edit IT staff form', function () {
     $response = $this->actingAs($this->superAdmin)->get(route('it-staff.edit', $staff));
 
     $response->assertStatus(200);
-    $response->assertSee('Edit IT Staff');
+    $response->assertSee('Edit ' . $staff->name);
     $response->assertSee('John Doe');
     $response->assertSee('Network Admin');
 });

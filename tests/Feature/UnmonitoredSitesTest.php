@@ -57,7 +57,8 @@ describe('edit form', function () {
             ->get(route('sites.edit', $site))
             ->assertOk()
             ->assertSee('Monitor this site')
-            ->assertDontSee('checked', false);
+            ->assertSee('id="is_monitored" value="1"', false)
+            ->assertDontSee('id="is_monitored" value="1" checked', false);
     });
 
     it('turns monitoring off', function () {
@@ -187,9 +188,10 @@ describe('dashboard', function () {
         Livewire::actingAs($this->admin)
             ->test(Dashboard::class)
             ->assertSee('Paused Site')
-            ->assertSee('Not Monitored')
-            ->assertSeeHtml('border-l-base-300')
-            ->assertDontSeeHtml('border-l-error');
+            ->assertSee('Not monitored')
+            // The status badge says "Not monitored", not the site's last status (totally down)
+            ->assertSeeHtml('data-status="not_monitored"')
+            ->assertDontSeeHtml('data-status="totally_down"');
     });
 
     it('hides unmonitored sites when filtering by status', function () {
