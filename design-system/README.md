@@ -7,7 +7,7 @@ The brand book for Institut Teknologi Kalimantan interfaces, copied from the pub
 | File | What it is |
 |---|---|
 | `tokens.json` | Source of truth for every color, type style, spacing, radius, shadow, duration and z-index, in light and dark |
-| `tokens.css` | The same tokens as CSS variables (`--itk-*`), plus the Figtree `@font-face` rules. Imported by `resources/css/app.css` |
+| `tokens.css` | The same tokens as CSS variables (`--itk-*`). Imported by `resources/css/app.css`, which also holds the Figtree `@font-face` rules (font files in `resources/fonts/`) |
 | `COMPONENTS.md` | Guidelines for all 88 components: when to use each, what it needs, and the rules it must follow |
 | `MIGRATION.md` | Step-by-step instructions for moving webstatus-v2 onto this system |
 | `reference/components.css` | Reference styles of the React implementation (tokens renamed to `--itk-*`). Port rules from it; don't import it |

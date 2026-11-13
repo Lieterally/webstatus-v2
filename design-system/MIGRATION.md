@@ -14,12 +14,14 @@ Read `design-system/README.md` (the brand book and the project overrides) and sk
 ## Rules for every change
 
 1. **Front end only.** Do not change controllers, models, enums, routes, Livewire component classes, validation or queries. Exception: a small presentational helper (for example a `label()` or `icon()` method on `App\Enums\SiteStatus`) is fine if it removes duplicated markup. Say so in the commit message.
+   Second exception: `DowntimeController.php` (around line 121) sets Gantt bar colors as hex (`'fillColor' => '#DC2626' / '#F87171'`). Replace that key with `'state' => $event->isActive() ? 'active' : 'resolved'` and pick the color in the view (see 2.6). Presentation does not belong in the controller.
 2. **Keep behaviour attributes intact:** every `wire:*`, `x-*`, `@click`, `:class`, `@entangle`, `id` used by scripts (for example `downtimeTotalBadge`, `siteDowntimeTotalBadge`), form `name`s, `@csrf` and `@method`.
 3. **Use tokens, never raw values.** No hex codes, no `gray-*` / `blue-*` palette classes and no arbitrary values like `bg-[#...]` in views. If a value is missing from the tokens, stop and ask.
 4. **Git:** work on a branch per step (`design-system/step-1`, `design-system/step-2`). Commit after each sub-step or page, with a message naming the page.
 5. **After every page**, run `npm run build` and `php artisan view:clear && php artisan view:cache`, and fix any error before moving on.
 6. **Ask before deleting files** (Font Awesome assets, old images, unused views).
-7. **UI language is English.** Use sentence case everywhere ("Website manager", "Add website", "Save changes"), plain verbs on buttons, and error messages that say what is wrong and how to fix it.
+7. **No faded text.** Never lower text contrast with opacity (`text-base-content/30`, `/40`, `/50`, `/60`, `opacity-50` on text). Secondary text is `text-ink-muted` (≥4.5:1 in both themes); disabled text is `text-ink-disabled`. Opacity is only allowed on decorative, non-text elements.
+8. **UI language is English.** Use sentence case everywhere ("Website manager", "Add website", "Save changes"), plain verbs on buttons, and error messages that say what is wrong and how to fix it.
 
 ---
 
@@ -323,6 +325,25 @@ Commit, then merge or keep the branch, as the user prefers.
 
 ---
 
+## Step 1 results: known issues for Step 2
+
+Step 1 was completed. These issues came out of its checks; each is assigned to a Step 2 sub-step, so resolve it there:
+
+| # | Issue | Fixed in |
+|---|---|---|
+| 1 | Footer is a white band in dark mode (`bg-neutral` → `surface-inverse`) | 2.2: footer becomes `bg-surface border-t border-line` |
+| 2 | 28 uses of `text-base-content/30`, `/40`, `/50`, `/60` (sidebar section titles, "No data yet", empty states) fail 4.5:1 | Every page in 2.2–2.7: replace with `text-ink-muted` (rule 7). Final grep in 2.9 |
+| 3 | Downtime Gantt bars hard-coded red in `DowntimeController.php`; active and resolved differ only by shade of red | 2.6 (controller exception in rule 1) |
+| 4 | `btn-sm` 35px, `btn-xs` 26px, `input-sm` 33px, toggles 24px | 2.1 components: md = 44px everywhere; `sm` (36px) only for dense desktop table row actions, with ≥8px between buttons |
+| 5 | Focus ring invisible on the blue top bar (ring and bar are both blue-700) | 2.2: top bar becomes `bg-surface` |
+| 6 | Color logo on dark grounds (login card in dark theme, footer) | 2.2 and 2.3: always pair the color logo (light) with the white logo (dark) |
+| 7 | Tom Select still on its default theme | 2.1 (`tom-select-itk.css`) |
+| 8 | Pagination current page is only a faint grey fill | 2.8 |
+
+Not a design issue: intermittent 500 "No application encryption key" on Windows/Laragon. That's PHP failing to read `.env` under Apache with thread-safe PHP. Run `php artisan config:cache` after any `.env` change. It is outside this migration; don't change server setup unless the user asks.
+
+---
+
 ## Step 2: replace components page by page
 
 Branch: `git switch -c design-system/step-2`
@@ -390,7 +411,7 @@ Keep the structure (drawer, top bar, sidebar, content, footer); restyle it:
 
 ### 2.3 Login: `auth/login.blade.php`
 
-Centered card on `bg-canvas`, logo above, `x-itk.field` + inputs with `autocomplete="username"` / `"current-password"`, one primary full-width "Log in" button, and errors under their fields.
+Centered card (`bg-surface`, `rounded-lg`, `shadow-2`) on `bg-canvas`. Logo above it: the color lockup in light, the white lockup in dark (same `dark:` pair as the top bar). `x-itk.field` + inputs with `autocomplete="username"` / `"current-password"`, one primary full-width "Log in" button, and errors under their fields.
 
 ### 2.4 Dashboard: `livewire/dashboard.blade.php`
 
@@ -408,6 +429,8 @@ Centered card on `bg-canvas`, logo above, `x-itk.field` + inputs with `autocompl
 Index pages: page header with a primary "Add website" button, `x-itk.table`, `x-itk.tooltip` for the page-path list, `x-itk.alert-dialog` for delete (title "Delete {name}?", message saying what is lost, confirm "Delete website", focus starts on Cancel). Create/edit forms: `x-itk.field` stack (`space-y-5`), max width ~640px, footer with Cancel (secondary) + Save (primary), and errors under their fields.
 
 ### 2.6 Downtime: `downtime/index.blade.php`
+
+**Gantt colors:** after the controller sends `state` (rule 1), map it in the view's ApexCharts setup: `active` → `itkChartColors().danger` with the legend label "Ongoing"; `resolved` → `itkChartColors().series[3]` (`chart-4`, neutral slate) with the legend label "Resolved". The two now differ in lightness and hue, not just shade, and a visible legend names them. Re-read the colors on `itk-theme-change`.
 
 Filters as fields or a toggle-group, the ApexCharts chart (already tokenized), the table → `x-itk.table`, and "Ongoing" → `x-itk.badge tone="danger" icon`.
 
