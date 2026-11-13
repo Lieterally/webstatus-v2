@@ -9,7 +9,11 @@ use App\Models\ITStaff;
 use App\Models\Page;
 use App\Models\Site;
 use App\Services\MonitoringServiceInterface;
+use App\Services\PublicStatusService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 class SiteController extends Controller
@@ -143,6 +147,55 @@ class SiteController extends Controller
      * Remove the specified site from storage.
      * The confirmation prompt is handled on the frontend (JavaScript/Alpine.js).
      */
+    /**
+     * Apply one action to several selected websites from the website manager list.
+     * Each site goes through the same path as its single-site equivalent: delete(), or
+     * MonitoringService::setMonitored() so open outages are closed the usual way.
+     */
+    public function bulk(Request $request, MonitoringServiceInterface $monitoringService): RedirectResponse
+    {
+        $validated = $request->validate([
+            'action' => ['required', 'in:delete,monitor_on,monitor_off,make_public,make_private'],
+            'ids' => ['required', 'array', 'min:1', 'max:100'],
+            'ids.*' => ['integer', 'distinct', 'exists:sites,id'],
+        ], [
+            'ids.required' => 'Select at least one website, then choose an action.',
+            'ids.*.exists' => 'One of the selected websites no longer exists. Reload the page and try again.',
+            'action.in' => 'Choose one of the listed actions.',
+        ]);
+
+        $sites = Site::whereIn('id', $validated['ids'])->get();
+        $count = $sites->count();
+        $websites = $count . ' ' . Str::plural('website', $count);
+        $one = $count === 1;
+
+        switch ($validated['action']) {
+            case 'delete':
+                // Pages and check history cascade, as with a single delete
+                DB::transaction(fn () => $sites->each->delete());
+                $message = "Deleted {$websites}. " . ($one ? 'It is' : 'They are') . ' left out of future checking cycles.';
+                break;
+            case 'monitor_on':
+            case 'monitor_off':
+                $on = $validated['action'] === 'monitor_on';
+                $sites->each(fn (Site $site) => $monitoringService->setMonitored($site, $on));
+                $message = $on
+                    ? "Monitoring turned on for {$websites}."
+                    : "Monitoring turned off for {$websites}. " . ($one ? 'Its open outage is' : 'Their open outages are') . ' closed.';
+                break;
+            default:
+                $public = $validated['action'] === 'make_public';
+                Site::whereIn('id', $sites->pluck('id'))->update(['is_public' => $public]);
+                $message = $public
+                    ? "{$websites} now " . ($one ? 'shows' : 'show') . ' on the public status page.'
+                    : "{$websites} " . ($one ? 'is' : 'are') . ' now hidden from the public status page.';
+        }
+
+        PublicStatusService::forget();
+
+        return back()->with('success', ucfirst($message));
+    }
+
     public function destroy(Site $site): RedirectResponse
     {
         // Deleting the site will cascade delete pages via foreign key constraint

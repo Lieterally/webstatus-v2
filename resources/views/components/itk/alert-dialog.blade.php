@@ -3,7 +3,8 @@
     Cancel, Esc cancels, clicking outside does nothing, focus returns to the trigger on close.
     Open it from Alpine with $refs[ref].showModal(). The confirm button submits a form whose action is
     the Alpine expression in `action` (for example "target.url").
-    Slots: heading (the question, may use x-text) and the default slot (what is lost).
+    Slots: heading (the question, may use x-text), the default slot (what is lost), and optional
+    fields (extra inputs posted with the confirm button). method="POST" sends a plain POST.
 --}}
 @props(['ref' => 'confirmDialog', 'action', 'confirmLabel', 'method' => 'DELETE', 'id' => 'confirm-dialog'])
 
@@ -20,7 +21,10 @@
         <x-itk.button variant="secondary" autofocus x-on:click="$refs.{{ $ref }}.close()">Cancel</x-itk.button>
         <form method="POST" x-bind:action="{{ $action }}" class="grid">
             @csrf
-            @method($method)
+            @if ($method && strtoupper($method) !== 'POST')
+                @method($method)
+            @endif
+            {{ $fields ?? '' }}
             <x-itk.button type="submit" variant="danger">{{ $confirmLabel }}</x-itk.button>
         </form>
     </div>

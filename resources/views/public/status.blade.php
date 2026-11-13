@@ -8,10 +8,26 @@
     $now = $status['generated_at'];
     $banner = [
         'operational' => ['success', 'All websites are operational', null],
-        'degraded' => ['warning', 'Some websites are partially down', 'Some pages of these websites are not loading. The rest of each website works.'],
-        'down' => ['danger', 'Some websites are down', 'These websites cannot be reached right now. IT staff are notified automatically.'],
-        'paused' => ['info', 'Monitoring is paused', 'Automatic checks are switched off, so the statuses below are unknown.'],
-        'stale' => ['warning', 'Status may be out of date', 'The last check is older than expected, so the statuses below are unknown.'],
+        'degraded' => [
+            'warning',
+            'Some websites are partially down',
+            'Some pages of these websites are not loading. The rest of each website works.',
+        ],
+        'down' => [
+            'danger',
+            'Some websites are down',
+            'These websites cannot be reached right now. IT staff are notified automatically.',
+        ],
+        'paused' => [
+            'info',
+            'Monitoring is paused',
+            'Automatic checks are switched off, so the statuses below are unknown.',
+        ],
+        'stale' => [
+            'warning',
+            'Status may be out of date',
+            'The last check is older than expected, so the statuses below are unknown.',
+        ],
         'empty' => ['info', 'No websites are listed yet', null],
     ][$status['state']];
     $lastChecked = $status['last_checked_at']
@@ -26,16 +42,15 @@
 
 @section('content')
     <div x-data="{
-            version: @js($status['version']),
-            changed: false,
-            async poll() {
-                try {
-                    const r = await fetch(@js(route('status.json')), { headers: { Accept: 'application/json' } });
-                    if (r.ok && (await r.json()).version !== this.version) this.changed = true;
-                } catch (e) {}
-            },
-        }"
-        x-init="setInterval(() => { if (!document.hidden && !changed) poll() }, 60000)">
+        version: @js($status['version']),
+        changed: false,
+        async poll() {
+            try {
+                const r = await fetch(@js(route('status.json')), { headers: { Accept: 'application/json' } });
+                if (r.ok && (await r.json()).version !== this.version) this.changed = true;
+            } catch (e) {}
+        },
+    }" x-init="setInterval(() => { if (!document.hidden && !changed) poll() }, 60000)">
 
         <h1 class="text-title-1 text-ink mb-4">ITK website status</h1>
 
@@ -43,7 +58,8 @@
         <div role="status" class="mb-4" x-show="changed" x-cloak>
             <x-itk.alert tone="info">
                 The status has been updated.
-                <a href="{{ route('status') }}" class="font-semibold text-link underline underline-offset-3">Refresh to see it</a>
+                <a href="{{ route('status') }}" class="font-semibold text-link underline underline-offset-3">Refresh to see
+                    it</a>
             </x-itk.alert>
         </div>
 
@@ -76,7 +92,8 @@
                                 <span class="flex flex-wrap items-center gap-3">
                                     <span class="text-title-3 text-ink">{{ $category['name'] }}</span>
                                     <span class="text-footnote text-ink-muted">
-                                        {{ count($category['sites']) }} {{ \Illuminate\Support\Str::plural('website', count($category['sites'])) }}
+                                        {{ count($category['sites']) }}
+                                        {{ \Illuminate\Support\Str::plural('website', count($category['sites'])) }}
                                     </span>
                                 </span>
                             </x-slot:trigger>
@@ -84,7 +101,9 @@
                             <ul class="grid pb-2">
                                 @foreach ($category['sites'] as $site)
                                     @php
-                                        $fmt = fn ($v) => $v === null ? 'No data' : rtrim(rtrim(number_format($v, 2), '0'), '.') . '%';
+                                        $fmt = fn($v) => $v === null
+                                            ? 'No data'
+                                            : rtrim(rtrim(number_format($v, 2), '0'), '.') . '%';
                                     @endphp
                                     <li class="grid gap-3 py-4 border-t border-line">
                                         <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -92,7 +111,8 @@
                                                 <p class="text-headline text-ink">{{ $site['name'] }}</p>
                                                 <a href="{{ $site['url'] }}" target="_blank" rel="noopener noreferrer"
                                                     class="inline-flex items-center gap-1 text-footnote text-link hover:underline underline-offset-3 break-all">
-                                                    {{ $site['host'] }}<x-itk.icon name="external-link" size="14" /><span class="sr-only"> (opens in a new tab)</span>
+                                                    {{ $site['host'] }}<x-itk.icon name="external-link"
+                                                        size="14" /><span class="sr-only"> (opens in a new tab)</span>
                                                 </a>
                                             </div>
                                             <div class="flex items-center gap-3">
@@ -116,10 +136,14 @@
 
                 {{-- Legend: the bar colours in words --}}
                 <ul class="flex flex-wrap gap-x-6 gap-y-2 mt-4 text-footnote text-ink-muted" aria-label="Uptime bar legend">
-                    <li class="flex items-center gap-2"><span class="inline-block w-2 h-4 rounded-xs bg-success" aria-hidden="true"></span>No downtime</li>
-                    <li class="flex items-center gap-2"><span class="inline-block w-2 h-4 rounded-xs bg-warning" aria-hidden="true"></span>Under 1% downtime</li>
-                    <li class="flex items-center gap-2"><span class="inline-block w-2 h-4 rounded-xs bg-error" aria-hidden="true"></span>1% downtime or more</li>
-                    <li class="flex items-center gap-2"><span class="inline-block w-2 h-4 rounded-xs bg-line" aria-hidden="true"></span>No data</li>
+                    <li class="flex items-center gap-2"><span class="inline-block w-2 h-4 rounded-xs bg-success"
+                            aria-hidden="true"></span>No downtime</li>
+                    <li class="flex items-center gap-2"><span class="inline-block w-2 h-4 rounded-xs bg-warning"
+                            aria-hidden="true"></span>Under 1% downtime</li>
+                    <li class="flex items-center gap-2"><span class="inline-block w-2 h-4 rounded-xs bg-error"
+                            aria-hidden="true"></span>1% downtime or more</li>
+                    <li class="flex items-center gap-2"><span class="inline-block w-2 h-4 rounded-xs bg-line"
+                            aria-hidden="true"></span>No data</li>
                 </ul>
             </section>
         @endif
@@ -127,11 +151,13 @@
         {{-- Incidents --}}
         <section aria-labelledby="incidents-heading">
             <h2 id="incidents-heading" class="text-title-2 text-ink mb-1">Incidents</h2>
-            <p class="text-footnote text-ink-muted mb-4">Detected automatically. Ongoing first, then the last {{ PS::INCIDENT_DAYS }} days.</p>
+            <p class="text-footnote text-ink-muted mb-4">Detected automatically. Ongoing first, then the last
+                {{ PS::INCIDENT_DAYS }} days.</p>
 
             @if (count($status['incidents']) === 0)
                 <x-itk.card>
-                    <x-itk.empty title="No incidents in the last {{ PS::INCIDENT_DAYS }} days" icon="circle-check" class="py-6" />
+                    <x-itk.empty title="No incidents in the last {{ PS::INCIDENT_DAYS }} days" icon="circle-check"
+                        class="py-6" />
                 </x-itk.card>
             @else
                 <ul class="grid gap-4">
@@ -139,14 +165,43 @@
                         @php
                             $state = $incident['state'];
                             $pages = $incident['pages_count'];
-                            $detail = 'Lasted ' . PS::formatDuration($incident['duration_seconds'])
-                                . ($state === 'ongoing' ? ' so far' : '')
-                                . ($pages > 0 ? ' · ' . $pages . ' ' . \Illuminate\Support\Str::plural('page', $pages) . ' affected' : '');
-                            $steps = [['title' => 'Outage detected', 'status' => 'error', 'time' => PS::formatTime($incident['started_at'], $now)]];
+                            $detail =
+                                'Lasted ' .
+                                PS::formatDuration($incident['duration_seconds']) .
+                                ($state === 'ongoing' ? ' so far' : '') .
+                                ($pages > 0
+                                    ? ' · ' .
+                                        $pages .
+                                        ' ' .
+                                        \Illuminate\Support\Str::plural('page', $pages) .
+                                        ' affected'
+                                    : '');
+                            $steps = [
+                                [
+                                    'title' => 'Outage detected',
+                                    'status' => 'error',
+                                    'time' => PS::formatTime($incident['started_at'], $now),
+                                ],
+                            ];
                             $steps[] = match ($state) {
-                                'ongoing' => ['title' => 'Still down, being checked every ' . $interval . ' minutes', 'status' => 'current', 'detail' => $detail],
-                                'monitoring_stopped' => ['title' => 'Monitoring stopped', 'status' => 'pending', 'word' => 'Ended', 'time' => PS::formatTime($incident['ended_at'], $now), 'detail' => $detail],
-                                default => ['title' => 'Resolved', 'status' => 'done', 'time' => PS::formatTime($incident['ended_at'], $now), 'detail' => $detail],
+                                'ongoing' => [
+                                    'title' => 'Still down, being checked every ' . $interval . ' minutes',
+                                    'status' => 'current',
+                                    'detail' => $detail,
+                                ],
+                                'monitoring_stopped' => [
+                                    'title' => 'Monitoring stopped',
+                                    'status' => 'pending',
+                                    'word' => 'Ended',
+                                    'time' => PS::formatTime($incident['ended_at'], $now),
+                                    'detail' => $detail,
+                                ],
+                                default => [
+                                    'title' => 'Resolved',
+                                    'status' => 'done',
+                                    'time' => PS::formatTime($incident['ended_at'], $now),
+                                    'detail' => $detail,
+                                ],
                             };
                         @endphp
                         <li>

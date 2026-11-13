@@ -71,6 +71,7 @@ Route::middleware(['auth', 'role:admin'])->group(function () {
     Route::get('/downtime', [DowntimeController::class, 'index'])->name('downtime.index');
 
     // Website Manager - accessible by both Admin and Super_Admin
+    Route::post('/sites/bulk', [SiteController::class, 'bulk'])->name('sites.bulk');
     Route::resource('sites', SiteController::class)->except(['show']);
 
     // Category Manager - accessible by both Admin and Super_Admin
