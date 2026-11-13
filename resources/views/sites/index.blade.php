@@ -3,9 +3,54 @@
 @section('title', 'Website manager')
 
 @section('content')
+    <div x-data="{
+            target: { name: '', url: '' },
+            confirmDelete(name, url) { this.target = { name, url }; $refs.confirmDialog.showModal(); },
+            selected: [],
+            pageIds: @js($sites->pluck('id')),
+            get allSelected() { return this.pageIds.length > 0 && this.selected.length === this.pageIds.length },
+            get someSelected() { return this.selected.length > 0 && !this.allSelected },
+            get countLabel() { return this.selected.length + (this.selected.length === 1 ? ' website' : ' websites') },
+            toggleAll(on) { this.selected = on ? [...this.pageIds] : [] },
+            run(action) { if (!this.selected.length) return; $refs.bulkAction.value = action; $refs.bulkForm.submit() },
+        }">
     <x-itk.page-header title="Website manager" description="Manage monitored websites and their pages.">
         <x-slot:actions>
             <x-itk.button variant="secondary" :href="route('categories.index')" icon="folder">Manage categories</x-itk.button>
+            <x-itk.dropdown-menu id="bulk-actions" label="Bulk actions" icon="list-checks">
+                <x-slot:trigger>
+                    Bulk actions<span x-show="selected.length" x-cloak class="tabular-nums" x-text="'(' + selected.length + ')'"></span>
+                    <span class="sr-only" x-text="selected.length ? countLabel + ' selected' : 'No websites selected'"></span>
+                </x-slot:trigger>
+
+                <p x-show="!selected.length" class="px-3 py-2 text-footnote text-ink-muted">Select websites in the table first.</p>
+                <p x-show="selected.length" x-cloak class="px-3 py-2 text-footnote text-ink-muted" aria-hidden="true">
+                    <span x-text="countLabel"></span> selected
+                </p>
+                <x-itk.menu-item icon="play" x-bind:aria-disabled="selected.length ? 'false' : 'true'" x-on:click="run('monitor_on')">
+                    Turn monitoring on
+                </x-itk.menu-item>
+                <x-itk.menu-item icon="circle-pause" x-bind:aria-disabled="selected.length ? 'false' : 'true'" x-on:click="run('monitor_off')">
+                    Turn monitoring off
+                </x-itk.menu-item>
+                <x-itk.menu-separator />
+                <x-itk.menu-item icon="eye" x-bind:aria-disabled="selected.length ? 'false' : 'true'" x-on:click="run('make_public')">
+                    Make public
+                </x-itk.menu-item>
+                <x-itk.menu-item icon="eye-off" x-bind:aria-disabled="selected.length ? 'false' : 'true'" x-on:click="run('make_private')">
+                    Make private
+                </x-itk.menu-item>
+                <x-itk.menu-separator />
+                <x-itk.menu-item icon="x" x-bind:aria-disabled="selected.length ? 'false' : 'true'"
+                    x-on:click="if (selected.length) { selected = []; close() }">
+                    Clear selection
+                </x-itk.menu-item>
+                <x-itk.menu-separator />
+                <x-itk.menu-item icon="trash-2" destructive x-bind:aria-disabled="selected.length ? 'false' : 'true'"
+                    x-on:click="if (selected.length) { close(); $nextTick(() => $refs.bulkDialog.showModal()) }">
+                    Delete…
+                </x-itk.menu-item>
+            </x-itk.dropdown-menu>
             <x-itk.button :href="route('sites.create')" icon="plus">Add website</x-itk.button>
         </x-slot:actions>
     </x-itk.page-header>
@@ -40,36 +85,11 @@
         @endif
     </form>
 
-    <div x-data="{
-            target: { name: '', url: '' },
-            confirmDelete(name, url) { this.target = { name, url }; $refs.confirmDialog.showModal(); },
-            selected: [],
-            pageIds: @js($sites->pluck('id')),
-            get allSelected() { return this.pageIds.length > 0 && this.selected.length === this.pageIds.length },
-            get someSelected() { return this.selected.length > 0 && !this.allSelected },
-            get countLabel() { return this.selected.length + (this.selected.length === 1 ? ' website' : ' websites') },
-            toggleAll(on) { this.selected = on ? [...this.pageIds] : [] },
-            run(action) { $refs.bulkAction.value = action; $refs.bulkForm.submit() },
-        }">
         @if ($errors->has('ids') || $errors->has('ids.*') || $errors->has('action'))
             <x-itk.alert tone="danger" class="mb-4">
                 {{ $errors->first('ids') ?: ($errors->first('ids.*') ?: $errors->first('action')) }}
             </x-itk.alert>
         @endif
-
-        {{-- Bulk actions for the selected websites on this page --}}
-        <div x-show="selected.length > 0" x-cloak role="region" aria-label="Bulk actions"
-            class="flex flex-wrap items-center gap-2 mb-4 p-3 rounded-md border border-line bg-primary-soft">
-            <p class="text-callout text-primary-soft-content mr-2" aria-live="polite">
-                <span class="font-semibold" x-text="countLabel"></span> selected
-            </p>
-            <x-itk.button variant="secondary" icon="play" x-on:click="run('monitor_on')">Turn monitoring on</x-itk.button>
-            <x-itk.button variant="secondary" icon="circle-pause" x-on:click="run('monitor_off')">Turn monitoring off</x-itk.button>
-            <x-itk.button variant="secondary" icon="eye" x-on:click="run('make_public')">Make public</x-itk.button>
-            <x-itk.button variant="secondary" icon="eye-off" x-on:click="run('make_private')">Make private</x-itk.button>
-            <x-itk.button variant="danger" icon="trash-2" x-on:click="$refs.bulkDialog.showModal()">Delete</x-itk.button>
-            <x-itk.button variant="ghost" icon="x" x-on:click="selected = []" class="sm:ml-auto">Clear selection</x-itk.button>
-        </div>
 
         <form x-ref="bulkForm" method="POST" action="{{ route('sites.bulk') }}" class="hidden">
             @csrf
