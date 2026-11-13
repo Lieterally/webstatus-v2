@@ -42,11 +42,14 @@ class SiteController extends Controller
             $query->where('responsible_person_id', $personId);
         }
 
-        $sites = $query->paginate(10)->withQueryString();
+        // ?show=all lists every matching site on one page (still a paginator, so the view stays the same)
+        $showAll = request('show') === 'all';
+        $perPage = $showAll ? max(1, (clone $query)->count()) : 10;
+        $sites = $query->paginate($perPage)->withQueryString();
         $categories = Category::orderBy('name')->get();
         $staffMembers = ITStaff::orderBy('name')->get();
 
-        return view('sites.index', compact('sites', 'categories', 'staffMembers'));
+        return view('sites.index', compact('sites', 'categories', 'staffMembers', 'showAll'));
     }
 
     /**
@@ -156,7 +159,7 @@ class SiteController extends Controller
     {
         $validated = $request->validate([
             'action' => ['required', 'in:delete,monitor_on,monitor_off,make_public,make_private'],
-            'ids' => ['required', 'array', 'min:1', 'max:100'],
+            'ids' => ['required', 'array', 'min:1', 'max:1000'],
             'ids.*' => ['integer', 'distinct', 'exists:sites,id'],
         ], [
             'ids.required' => 'Select at least one website, then choose an action.',

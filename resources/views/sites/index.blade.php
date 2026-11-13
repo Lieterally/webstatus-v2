@@ -58,6 +58,9 @@
     {{-- Search and filters --}}
     <form method="GET" action="{{ route('sites.index') }}" role="search" aria-label="Filter websites"
         class="flex flex-wrap items-center gap-3 mb-4">
+        @if ($showAll)
+            <input type="hidden" name="show" value="all">
+        @endif
         <div class="relative w-full sm:w-64">
             <x-itk.icon name="search" class="pointer-events-none absolute left-3 top-3 text-ink-muted" />
             <x-itk.input type="search" name="search" :value="request('search')" aria-label="Search by website name"
@@ -81,7 +84,7 @@
         <x-itk.button type="submit" variant="secondary" icon="list-filter">Apply filters</x-itk.button>
 
         @if (request('search') || request('category') || request('person'))
-            <x-itk.button variant="ghost" :href="route('sites.index')" icon="x">Clear filters</x-itk.button>
+            <x-itk.button variant="ghost" :href="route('sites.index', $showAll ? ['show' => 'all'] : [])" icon="x">Clear filters</x-itk.button>
         @endif
     </form>
 
@@ -123,7 +126,7 @@
                     <tr>
                         <th scope="col" class="w-14">
                             <label class="inline-grid place-items-center size-11 -my-3 cursor-pointer">
-                                <input type="checkbox" aria-label="Select all websites on this page"
+                                <input type="checkbox" aria-label="{{ $showAll ? 'Select all websites' : 'Select all websites on this page' }}"
                                     class="size-5 accent-primary cursor-pointer"
                                     x-bind:checked="allSelected" x-effect="$el.indeterminate = someSelected"
                                     x-on:change="toggleAll($event.target.checked)">
@@ -188,6 +191,28 @@
                     @endforeach
                 </tbody>
             </x-itk.table>
+        @endif
+
+        @if ($sites->total() > 0)
+            @php $total = $sites->total(); $noun = \Illuminate\Support\Str::plural('website', $total); @endphp
+            <div class="flex flex-wrap items-center justify-between gap-3 mt-4">
+                <p class="text-footnote text-ink-muted tabular-nums">
+                    @if ($showAll || ! $sites->hasPages())
+                        Showing all {{ $total }} {{ $noun }}
+                    @else
+                        Showing {{ $sites->firstItem() }}–{{ $sites->lastItem() }} of {{ $total }} {{ $noun }}
+                    @endif
+                </p>
+                @if ($showAll && $total > 10)
+                    <x-itk.button variant="ghost" icon="list" :href="route('sites.index', request()->except(['show', 'page']))">
+                        Show 10 per page
+                    </x-itk.button>
+                @elseif (! $showAll && $sites->hasPages())
+                    <x-itk.button variant="ghost" icon="list" :href="route('sites.index', array_merge(request()->except('page'), ['show' => 'all']))">
+                        Show all {{ $total }}
+                    </x-itk.button>
+                @endif
+            </div>
         @endif
 
         @if ($sites->hasPages())
