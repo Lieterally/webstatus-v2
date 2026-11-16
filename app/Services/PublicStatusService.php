@@ -28,6 +28,11 @@ class PublicStatusService
 
     public const INCIDENT_DAYS = 14;
 
+    public const HISTORY_CACHE_KEY = 'public-history';
+
+    /** The history page covers the current month and this many months before it. */
+    public const HISTORY_MONTHS = 12;
+
     /** A last check older than this many cycle intervals marks the page as out of date. */
     public const STALE_AFTER_INTERVALS = 3;
 
@@ -39,6 +44,98 @@ class PublicStatusService
     public static function forget(): void
     {
         Cache::forget(self::CACHE_KEY);
+        Cache::forget(self::HISTORY_CACHE_KEY);
+    }
+
+    /**
+     * Incident history for the public /history page: one entry per month (newest first), each with
+     * its incidents grouped by day. categoryId narrows it to one category; unknown ids are ignored.
+     */
+    public function history(?int $categoryId = null, ?CarbonImmutable $now = null): array
+    {
+        // Tests pass $now and skip the cache; the page uses the cached copy
+        $data = $now
+            ? $this->buildHistory($now)
+            : Cache::remember(self::HISTORY_CACHE_KEY, self::CACHE_SECONDS, fn () => $this->buildHistory(CarbonImmutable::now()));
+        $now = ($now ?? CarbonImmutable::now())->setTimezone(config('app.timezone'));
+
+        $categoryIds = array_column($data['categories'], 'id');
+        $categoryId = in_array($categoryId, $categoryIds, true) ? $categoryId : null;
+        $incidents = collect($data['incidents'])
+            ->when($categoryId, fn ($c) => $c->where('category_id', $categoryId));
+
+        $byMonth = $incidents->groupBy(fn ($i) => CarbonImmutable::parse($i['started_at'])
+            ->setTimezone(config('app.timezone'))->format('Y-m'));
+
+        $months = [];
+        for ($m = 0; $m < self::HISTORY_MONTHS; $m++) {
+            $month = $now->startOfMonth()->subMonthsNoOverflow($m);
+            $rows = $byMonth->get($month->format('Y-m'), collect());
+            $months[] = [
+                'key' => $month->format('Y-m'),
+                'label' => $month->format('F Y'),
+                'count' => $rows->count(),
+                'has_ongoing' => $rows->contains('state', 'ongoing'),
+                'days' => $rows
+                    ->groupBy(fn ($i) => CarbonImmutable::parse($i['started_at'])
+                        ->setTimezone(config('app.timezone'))->toDateString())
+                    ->map(fn (Collection $items, string $date) => [
+                        'date' => $date,
+                        'incidents' => $items->values()->all(),
+                    ])
+                    ->values()
+                    ->all(),
+            ];
+        }
+
+        return [
+            'generated_at' => $now->toIso8601String(),
+            'interval_minutes' => $data['interval_minutes'],
+            'categories' => $data['categories'],
+            'category_id' => $categoryId,
+            'months' => $months,
+        ];
+    }
+
+    private function buildHistory(CarbonImmutable $now): array
+    {
+        $sites = Site::query()
+            ->with('category:id,name')
+            ->where('is_public', true)
+            ->where('is_monitored', true)
+            ->get(['id', 'name', 'public_name', 'category_id']);
+        $siteById = $sites->keyBy('id');
+        $from = $now->setTimezone(config('app.timezone'))->startOfMonth()->subMonthsNoOverflow(self::HISTORY_MONTHS - 1);
+
+        $incidents = DowntimeHistory::query()
+            ->whereIn('site_id', $sites->pluck('id'))
+            ->where('started_at', '>=', $from)
+            ->orderByDesc('started_at')
+            ->get()
+            ->map(function (DowntimeHistory $h) use ($siteById) {
+                $site = $siteById[$h->site_id];
+
+                return [
+                    'site' => $site->publicName(),
+                    'category_id' => $site->category_id,
+                    'category' => $site->category?->name ?? 'Other',
+                    'state' => $h->isActive() ? 'ongoing' : ($h->wasMonitoringStopped() ? 'monitoring_stopped' : 'resolved'),
+                    'started_at' => CarbonImmutable::parse($h->started_at)->toIso8601String(),
+                    'ended_at' => $h->ended_at ? CarbonImmutable::parse($h->ended_at)->toIso8601String() : null,
+                    'duration_seconds' => $h->getLiveDurationSeconds(),
+                    'pages_count' => count($h->affected_pages ?? []),
+                ];
+            })
+            ->all();
+
+        $categories = $sites->pluck('category')->filter()->unique('id')->sortBy('name')
+            ->map(fn ($c) => ['id' => $c->id, 'name' => $c->name])->values()->all();
+
+        return [
+            'interval_minutes' => max(1, (int) SystemConfig::getValue('cycle_interval_minutes', '10')),
+            'categories' => $categories,
+            'incidents' => $incidents,
+        ];
     }
 
     public function build(?CarbonImmutable $now = null): array

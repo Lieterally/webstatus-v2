@@ -16,7 +16,7 @@
         'down' => [
             'danger',
             'Some websites are down',
-            'These websites cannot be reached right now. IT staff are notified automatically.',
+            'These websites cannot be reached right now. We are currently working on fixing it.',
         ],
         'paused' => [
             'info',
@@ -123,105 +123,21 @@
                                             </div>
                                         </div>
                                         <x-itk.uptime-bars :days="$site['days']" :label="$site['name']" :id="'uptime-' . $site['id']" />
-                                        <div class="flex justify-between text-footnote text-ink-muted" aria-hidden="true">
-                                            <span>{{ $status['history_days'] }} days ago</span>
-                                            <span>Today</span>
-                                        </div>
                                     </li>
                                 @endforeach
                             </ul>
                         </x-itk.collapsible>
                     @endforeach
                 </div>
-
-                {{-- Legend: the bar colours in words --}}
-                <ul class="flex flex-wrap gap-x-6 gap-y-2 mt-4 text-footnote text-ink-muted" aria-label="Uptime bar legend">
-                    <li class="flex items-center gap-2"><span class="inline-block w-2 h-4 rounded-xs bg-success"
-                            aria-hidden="true"></span>No downtime</li>
-                    <li class="flex items-center gap-2"><span class="inline-block w-2 h-4 rounded-xs bg-warning"
-                            aria-hidden="true"></span>Under 1% downtime</li>
-                    <li class="flex items-center gap-2"><span class="inline-block w-2 h-4 rounded-xs bg-error"
-                            aria-hidden="true"></span>1% downtime or more</li>
-                    <li class="flex items-center gap-2"><span class="inline-block w-2 h-4 rounded-xs bg-line"
-                            aria-hidden="true"></span>No data</li>
-                </ul>
             </section>
         @endif
 
-        {{-- Incidents --}}
-        <section aria-labelledby="incidents-heading">
-            <h2 id="incidents-heading" class="text-title-2 text-ink mb-1">Incidents</h2>
-            <p class="text-footnote text-ink-muted mb-4">Detected automatically. Ongoing first, then the last
-                {{ PS::INCIDENT_DAYS }} days.</p>
-
-            @if (count($status['incidents']) === 0)
-                <x-itk.card>
-                    <x-itk.empty title="No incidents in the last {{ PS::INCIDENT_DAYS }} days" icon="circle-check"
-                        class="py-6" />
-                </x-itk.card>
-            @else
-                <ul class="grid gap-4">
-                    @foreach ($status['incidents'] as $incident)
-                        @php
-                            $state = $incident['state'];
-                            $pages = $incident['pages_count'];
-                            $detail =
-                                'Lasted ' .
-                                PS::formatDuration($incident['duration_seconds']) .
-                                ($state === 'ongoing' ? ' so far' : '') .
-                                ($pages > 0
-                                    ? ' · ' .
-                                        $pages .
-                                        ' ' .
-                                        \Illuminate\Support\Str::plural('page', $pages) .
-                                        ' affected'
-                                    : '');
-                            $steps = [
-                                [
-                                    'title' => 'Outage detected',
-                                    'status' => 'error',
-                                    'time' => PS::formatTime($incident['started_at'], $now),
-                                ],
-                            ];
-                            $steps[] = match ($state) {
-                                'ongoing' => [
-                                    'title' => 'Still down, being checked every ' . $interval . ' minutes',
-                                    'status' => 'current',
-                                    'detail' => $detail,
-                                ],
-                                'monitoring_stopped' => [
-                                    'title' => 'Monitoring stopped',
-                                    'status' => 'pending',
-                                    'word' => 'Ended',
-                                    'time' => PS::formatTime($incident['ended_at'], $now),
-                                    'detail' => $detail,
-                                ],
-                                default => [
-                                    'title' => 'Resolved',
-                                    'status' => 'done',
-                                    'time' => PS::formatTime($incident['ended_at'], $now),
-                                    'detail' => $detail,
-                                ],
-                            };
-                        @endphp
-                        <li>
-                            <x-itk.card class="grid gap-4">
-                                <div class="flex flex-wrap items-center justify-between gap-3">
-                                    <h3 class="text-headline text-ink">Outage on {{ $incident['site'] }}</h3>
-                                    @if ($state === 'ongoing')
-                                        <x-itk.badge tone="danger" icon="circle-x">Ongoing</x-itk.badge>
-                                    @elseif ($state === 'monitoring_stopped')
-                                        <x-itk.badge tone="neutral" icon="circle-pause">Monitoring stopped</x-itk.badge>
-                                    @else
-                                        <x-itk.badge tone="success" icon="circle-check">Resolved</x-itk.badge>
-                                    @endif
-                                </div>
-                                <x-itk.trace :steps="$steps" :label="'Timeline of the outage on ' . $incident['site']" />
-                            </x-itk.card>
-                        </li>
-                    @endforeach
-                </ul>
-            @endif
-        </section>
+        {{-- Incident history lives on its own page --}}
+        <x-itk.card>
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <h2 class="text-title-3 text-ink">Incident history</h2>
+                <x-itk.button variant="secondary" :href="route('history')" icon-right="arrow-right">View history</x-itk.button>
+            </div>
+        </x-itk.card>
     </div>
 @endsection

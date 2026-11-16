@@ -27,6 +27,11 @@ Route::get('/', [PublicStatusController::class, 'show'])
     ->middleware('throttle:600,1')
     ->name('status');
 
+// Incident history by month, filterable by category
+Route::get('/history', [PublicStatusController::class, 'history'])
+    ->middleware('throttle:600,1')
+    ->name('history');
+
 // Same data as JSON (browsers may cache it for 60 s)
 Route::get('/status.json', [PublicStatusController::class, 'json'])
     ->middleware('throttle:600,1')
