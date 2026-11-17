@@ -11,6 +11,7 @@ use App\Http\Controllers\SystemConfigController;
 use App\Http\Controllers\TelegramTargetController;
 use App\Http\Controllers\TelegramWebhookController;
 use App\Http\Controllers\ITStaffController;
+use App\Http\Controllers\OutageNoteController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -74,6 +75,11 @@ Route::middleware(['auth', 'role:admin'])->group(function () {
 
     // Downtime Details
     Route::get('/downtime', [DowntimeController::class, 'index'])->name('downtime.index');
+
+    // Public notes on outages (from the public status page squares and the downtime page)
+    Route::post('/outage-notes', [OutageNoteController::class, 'update'])
+        ->middleware('throttle:60,1')
+        ->name('outage-notes.update');
 
     // Website Manager - accessible by both Admin and Super_Admin
     Route::post('/sites/bulk', [SiteController::class, 'bulk'])->name('sites.bulk');

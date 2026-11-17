@@ -178,6 +178,7 @@
                             <th scope="col" class="itk-num">Duration</th>
                             <th scope="col">Pages</th>
                             <th scope="col">Status</th>
+                            <th scope="col">Public note</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -224,6 +225,38 @@
                                     @else
                                         <x-itk.badge tone="success" icon="circle-check">Resolved</x-itk.badge>
                                     @endif
+                                </td>
+                                {{-- Public note: shown on the status page and incident history; same note as the public day squares --}}
+                                <td class="min-w-60 align-top" x-data="{ editing: false }">
+                                    <div x-show="!editing" class="grid gap-1 justify-items-start">
+                                        @if ($event->note)
+                                            <p class="text-callout font-normal text-ink whitespace-pre-line break-words line-clamp-3">{{ $event->note }}</p>
+                                            @if ($event->note_updated_at)
+                                                <p class="text-footnote text-ink-muted">
+                                                    {{ $event->noteAuthor?->username ?? 'Removed user' }} · {{ $event->note_updated_at->format('d M Y H:i') }}
+                                                </p>
+                                            @endif
+                                        @endif
+                                        <x-itk.button variant="ghost" size="sm" :icon="$event->note ? 'square-pen' : 'message-square-text'"
+                                            class="max-lg:min-h-11 -ml-3"
+                                            x-on:click="editing = true; $nextTick(() => $refs.note.focus())">
+                                            {{ $event->note ? 'Edit note' : 'Add note' }}<span class="sr-only"> for the outage on {{ $event->site?->name }} at {{ $event->started_at->format('d M Y H:i') }}</span>
+                                        </x-itk.button>
+                                    </div>
+                                    <form x-show="editing" x-cloak method="POST" action="{{ route('outage-notes.update') }}"
+                                        class="grid gap-2" x-on:keydown.escape="editing = false">
+                                        @csrf
+                                        <input type="hidden" name="notes[0][id]" value="{{ $event->id }}">
+                                        <x-itk.textarea rows="2" name="notes[0][note]" id="note-{{ $event->id }}" x-ref="note"
+                                            maxlength="{{ \App\Models\DowntimeHistory::NOTE_MAX_LENGTH }}"
+                                            aria-label="Public note for the outage on {{ $event->site?->name }} at {{ $event->started_at->format('d M Y H:i') }}"
+                                            placeholder="What happened, or what is being done">{{ $event->note }}</x-itk.textarea>
+                                        <p class="text-footnote text-ink-muted">Everyone can see this note on the public status page.</p>
+                                        <div class="flex gap-2">
+                                            <x-itk.button type="submit" size="sm" class="max-lg:min-h-11">Save</x-itk.button>
+                                            <x-itk.button variant="ghost" size="sm" class="max-lg:min-h-11" x-on:click="editing = false">Cancel</x-itk.button>
+                                        </div>
+                                    </form>
                                 </td>
                             </tr>
                         @endforeach

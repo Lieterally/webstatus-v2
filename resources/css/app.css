@@ -103,6 +103,27 @@ html {
     display: none !important;
 }
 
+/* Skeleton: while a container is aria-busy, each .live-skeleton inside is covered by a pulsing block of the same size */
+[aria-busy="true"] .live-skeleton {
+    position: relative;
+}
+
+[aria-busy="true"] .live-skeleton::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    z-index: 1;
+    border-radius: inherit;
+    background: var(--itk-border);
+    animation: itk-skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+/* Solid colours only, so nothing underneath shows through */
+@keyframes itk-skeleton-pulse {
+    0%, 100% { background: var(--itk-border); }
+    50% { background: var(--itk-surface-sunken); }
+}
+
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
         transition-duration: 0ms !important;

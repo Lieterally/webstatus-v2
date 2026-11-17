@@ -103,7 +103,7 @@ class PublicStatusService
             ->with('category:id,name')
             ->where('is_public', true)
             ->where('is_monitored', true)
-            ->get(['id', 'name', 'public_name', 'category_id']);
+            ->get(['id', 'name', 'public_name', 'base_url', 'category_id']);
         $siteById = $sites->keyBy('id');
         $from = $now->setTimezone(config('app.timezone'))->startOfMonth()->subMonthsNoOverflow(self::HISTORY_MONTHS - 1);
 
@@ -117,6 +117,7 @@ class PublicStatusService
 
                 return [
                     'site' => $site->publicName(),
+                    'host' => parse_url($site->base_url, PHP_URL_HOST) ?: $site->base_url,
                     'category_id' => $site->category_id,
                     'category' => $site->category?->name ?? 'Other',
                     'state' => $h->isActive() ? 'ongoing' : ($h->wasMonitoringStopped() ? 'monitoring_stopped' : 'resolved'),
@@ -124,6 +125,7 @@ class PublicStatusService
                     'ended_at' => $h->ended_at ? CarbonImmutable::parse($h->ended_at)->toIso8601String() : null,
                     'duration_seconds' => $h->getLiveDurationSeconds(),
                     'pages_count' => count($h->affected_pages ?? []),
+                    'note' => $h->note,
                 ];
             })
             ->all();
@@ -163,16 +165,22 @@ class PublicStatusService
             ->get(['site_id', 'period_start', 'downtime_seconds', 'checks_count'])
             ->groupBy('site_id');
 
-        $outagesPerDay = DowntimeHistory::query()
+        // Every outage that touches the window, so a day square can list (and staff can annotate) them.
+        // An outage that crosses midnight belongs to each day it touches.
+        $outages = DowntimeHistory::query()
             ->whereIn('site_id', $sites->pluck('id'))
-            ->where('started_at', '>=', $firstDay)
-            ->get(['site_id', 'started_at'])
-            ->groupBy(fn ($h) => $h->site_id . '|' . $h->started_at->toDateString())
-            ->map->count();
+            ->where(fn ($q) => $q->where('started_at', '>=', $firstDay)
+                ->orWhereNull('ended_at')
+                ->orWhere('ended_at', '>=', $firstDay))
+            ->orderBy('started_at')
+            ->get(['id', 'site_id', 'started_at', 'ended_at', 'status', 'note'])
+            ->groupBy('site_id');
 
         $siteRows = $sites->map(fn (Site $site) => $this->siteRow(
-            $site, $stats->get($site->id, collect()), $outagesPerDay, $firstDay, $now, $statusKnown,
+            $site, $stats->get($site->id, collect()), $outages->get($site->id, collect()), $firstDay, $now, $statusKnown,
         ));
+        $notes = $outages->flatten()->filter(fn ($o) => $o->note !== null)
+            ->map(fn ($o) => [$o->id, $o->note])->values()->all();
 
         $categories = $siteRows
             ->groupBy('category')
@@ -191,7 +199,7 @@ class PublicStatusService
         return [
             // Dates are ISO 8601 strings: the cache only unserialises plain values
             'generated_at' => $now->toIso8601String(),
-            'version' => $this->version($lastChecked, $monitoringEnabled, $state, $siteRows, $incidents),
+            'version' => $this->version($lastChecked, $monitoringEnabled, $state, $siteRows, $incidents, $notes),
             'last_checked_at' => $lastChecked?->toIso8601String(),
             'interval_minutes' => $intervalMinutes,
             'monitoring_enabled' => $monitoringEnabled,
@@ -207,7 +215,7 @@ class PublicStatusService
         ];
     }
 
-    private function siteRow(Site $site, Collection $stats, Collection $outagesPerDay, CarbonImmutable $firstDay, CarbonImmutable $now, bool $statusKnown): array
+    private function siteRow(Site $site, Collection $stats, Collection $outages, CarbonImmutable $firstDay, CarbonImmutable $now, bool $statusKnown): array
     {
         $byDate = $stats->keyBy(fn ($s) => Carbon::parse($s->period_start)->toDateString());
         $days = [];
@@ -218,10 +226,10 @@ class PublicStatusService
             $day = $firstDay->addDays($i);
             $date = $day->toDateString();
             $stat = $byDate->get($date);
-            $outages = (int) $outagesPerDay->get($site->id . '|' . $date, 0);
+            $items = $this->outagesOnDay($outages, $day, $now);
 
             if (! $stat || (int) $stat->checks_count === 0) {
-                $days[] = ['date' => $date, 'uptime' => null, 'downtime_seconds' => 0, 'outages' => $outages, 'tone' => 'none'];
+                $days[] = ['date' => $date, 'uptime' => null, 'downtime_seconds' => 0, 'outages' => count($items), 'items' => $items, 'tone' => 'none'];
                 continue;
             }
 
@@ -236,7 +244,8 @@ class PublicStatusService
                 'date' => $date,
                 'uptime' => $uptime,
                 'downtime_seconds' => $down,
-                'outages' => $outages,
+                'outages' => count($items),
+                'items' => $items,
                 'tone' => $this->dayTone($uptime),
             ];
         }
@@ -254,14 +263,58 @@ class PublicStatusService
     }
 
     /**
+     * The outages that overlap one day (in the app timezone), oldest first, with their public notes.
+     *
+     * @return list<array{id: int, started_at: string, ended_at: ?string, state: string, time: string, note: ?string}>
+     */
+    private function outagesOnDay(Collection $outages, CarbonImmutable $day, CarbonImmutable $now): array
+    {
+        $dayStart = $day->setTimezone(config('app.timezone'))->startOfDay();
+        $dayEnd = $dayStart->addDay();
+
+        return $outages
+            ->filter(function (DowntimeHistory $o) use ($dayStart, $dayEnd, $now) {
+                $start = CarbonImmutable::parse($o->started_at);
+                $end = $o->ended_at ? CarbonImmutable::parse($o->ended_at) : $now;
+
+                return $start->lt($dayEnd) && $end->gte($dayStart);
+            })
+            ->map(fn (DowntimeHistory $o) => [
+                'id' => $o->id,
+                'started_at' => CarbonImmutable::parse($o->started_at)->toIso8601String(),
+                'ended_at' => $o->ended_at ? CarbonImmutable::parse($o->ended_at)->toIso8601String() : null,
+                'state' => $o->isActive() ? 'ongoing' : ($o->wasMonitoringStopped() ? 'monitoring_stopped' : 'resolved'),
+                'time' => self::formatRange($o->started_at, $o->ended_at),
+                'note' => $o->note,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /** "13.44 – 14.17 WITA", "21.36 – 14 Nov, 01.05 WITA", "13.44 WITA – now" */
+    public static function formatRange(\DateTimeInterface|string $start, \DateTimeInterface|string|null $end): string
+    {
+        $tz = config('app.timezone');
+        $start = CarbonImmutable::parse($start)->setTimezone($tz);
+        if (! $end) {
+            return $start->format('H.i') . ' WITA – now';
+        }
+        $end = CarbonImmutable::parse($end)->setTimezone($tz);
+        $endText = $end->isSameDay($start) ? $end->format('H.i') : $end->format('j M') . ', ' . $end->format('H.i');
+
+        return $start->format('H.i') . ' – ' . $endText . ' WITA';
+    }
+
+    /**
      * Changes only when something a visitor would notice changes: a new check, monitoring on/off,
      * the overall state, a site's name or status, or an incident starting or ending. It leaves out
      * values that drift with the clock (build time, today's uptime %, ongoing durations), so the
      * page's "status has been updated" notice doesn't fire on every cache rebuild.
      */
-    private function version(?CarbonImmutable $lastChecked, bool $monitoringEnabled, string $state, Collection $siteRows, array $incidents): string
+    private function version(?CarbonImmutable $lastChecked, bool $monitoringEnabled, string $state, Collection $siteRows, array $incidents, array $notes = []): string
     {
         return md5(json_encode([
+            $notes,
             $lastChecked?->toIso8601String(),
             $monitoringEnabled,
             $state,

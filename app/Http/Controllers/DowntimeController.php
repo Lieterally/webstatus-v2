@@ -27,7 +27,7 @@ class DowntimeController extends Controller
         };
 
         // --- Outage Events Query ---
-        $query = DowntimeHistory::with('site')
+        $query = DowntimeHistory::with(['site', 'noteAuthor:id,username'])
             ->orderBy('started_at', 'desc');
 
         if ($since) {

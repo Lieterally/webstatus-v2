@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Services\PublicStatusService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 /**
@@ -18,12 +17,10 @@ class PublicStatusController extends Controller
         return view('public.status', ['status' => $service->snapshot()]);
     }
 
-    /** Incident history by month; ?category=<id> narrows it to one category. */
-    public function history(Request $request, PublicStatusService $service): View
+    /** Incident history by month (searched in the browser by website name or address). */
+    public function history(PublicStatusService $service): View
     {
-        $category = filter_var($request->query('category'), FILTER_VALIDATE_INT);
-
-        return view('public.history', ['history' => $service->history($category === false ? null : $category)]);
+        return view('public.history', ['history' => $service->history()]);
     }
 
     public function json(PublicStatusService $service): JsonResponse

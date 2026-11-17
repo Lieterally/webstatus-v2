@@ -13,7 +13,8 @@
     </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>@yield('title', 'Website status') - Institut Teknologi Kalimantan</title>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>@yield('title', 'Webstatus') - Institut Teknologi Kalimantan</title>
     <meta name="description" content="@yield('description', 'Live status and uptime of Institut Teknologi Kalimantan websites.')">
     <link rel="icon" type="image/png" href="{{ asset('images/brand/lambang-itk.png') }}">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -25,7 +26,7 @@
         Skip to content
     </a>
 
-    <x-itk.site-header title="Website status" :href="route('status')">
+    <x-itk.site-header title="Webstatus" :href="route('status')">
         <x-itk.theme-toggle />
         @auth
             <x-itk.button variant="secondary" size="sm" :href="route('dashboard')" icon="layout-dashboard"
@@ -36,14 +37,16 @@
         @endauth
     </x-itk.site-header>
 
-    <main id="content" tabindex="-1" class="flex-1 w-full max-w-5xl mx-auto px-4 md:px-6 lg:px-8 py-8 focus:outline-none">
+    <main id="content" tabindex="-1"
+        class="flex-1 w-full max-w-5xl mx-auto px-4 md:px-6 lg:px-8 py-8 focus:outline-none">
         @yield('content')
     </main>
 
     <footer class="bg-surface border-t border-line text-footnote text-ink-muted">
         <div class="flex flex-col sm:flex-row items-center justify-center gap-3 p-6 text-center">
             <img src="{{ asset('images/brand/lambang-itk.png') }}" alt="" class="size-8 dark:hidden">
-            <img src="{{ asset('images/brand/lambang-itk-white.png') }}" alt="" class="size-8 hidden dark:block">
+            <img src="{{ asset('images/brand/lambang-itk-white.png') }}" alt=""
+                class="size-8 hidden dark:block">
             <p>&copy; {{ date('Y') }} Institut Teknologi Kalimantan. @yield('footer-note')</p>
         </div>
     </footer>
