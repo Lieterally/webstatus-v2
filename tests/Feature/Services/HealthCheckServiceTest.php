@@ -363,3 +363,18 @@ it('keeps real page results when the live log cannot be written', function () {
     expect($result->pageResults->pluck('httpCode')->unique()->all())->toBe([200]);
     expect($result->pageResults->pluck('errorType')->unique()->all())->toBe([ErrorType::None]);
 });
+
+it('identifies itself with an ITK-Webstatus user agent instead of the Guzzle default', function () {
+    Http::fake(['*' => Http::response('OK', 200)]);
+
+    $site = new Site(['name' => 'UA Site', 'base_url' => 'https://ua.example']);
+    $site->id = 1;
+    $page = new Page(['path' => '/']);
+    $page->id = 1;
+    $page->site_id = 1;
+    $site->setRelation('pages', collect([$page]));
+
+    $this->service->checkSite($site);
+
+    Http::assertSent(fn ($request) => str_starts_with($request->header('User-Agent')[0] ?? '', 'ITK-Webstatus/1.0'));
+});

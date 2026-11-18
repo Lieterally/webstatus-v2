@@ -74,11 +74,11 @@ class PropertyTestHelpers
     }
 
     /**
-     * Determine if an HTTP code is considered successful (2xx or 3xx).
+     * Determine if an HTTP code is considered successful (2xx, 3xx, or 429 rate limited).
      */
     public static function isSuccessfulCode(int $code): bool
     {
-        return $code >= 200 && $code < 400;
+        return ($code >= 200 && $code < 400) || $code === 429;
     }
 
     /**

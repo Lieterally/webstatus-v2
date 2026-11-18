@@ -23,7 +23,18 @@ class PageCheckResult
      */
     public function isReachable(): bool
     {
-        return $this->errorType === ErrorType::None && $this->httpCode >= 200 && $this->httpCode < 400;
+        return $this->errorType === ErrorType::None && self::isSuccessfulCode($this->httpCode);
+    }
+
+    /**
+     * The one rule for which HTTP codes count as "up"; dashboard status and alerts both use it.
+     *
+     * 429 counts as up: the server answered and is only asking the checker to slow down,
+     * since all of a site's pages are requested at once.
+     */
+    public static function isSuccessfulCode(int $httpCode): bool
+    {
+        return ($httpCode >= 200 && $httpCode < 400) || $httpCode === 429;
     }
 
     /**

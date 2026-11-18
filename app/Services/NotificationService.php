@@ -259,8 +259,11 @@ class NotificationService implements NotificationServiceInterface
         $previousStatus = $site->status;
         $previousNotificationSent = $site->notification_sent;
 
-        // Determine current status from page results
-        $currentStatus = $this->determineStatusFromResults($siteResult);
+        // Same rule as the dashboard status, so the two can never disagree
+        $currentStatus = app(StatusDeterminationServiceInterface::class)->determineStatus(
+            $site,
+            $siteResult->pageResults->map(fn ($result) => ['http_code' => $result->httpCode]),
+        );
 
         // Handle recovery: site is now up
         if ($currentStatus === SiteStatus::Up) {
@@ -488,31 +491,6 @@ class NotificationService implements NotificationServiceInterface
         $parts[] = "{$minutes}m";
 
         return implode(' ', $parts);
-    }
-
-    /**
-     * Determine site status from check results.
-     */
-    private function determineStatusFromResults(SiteCheckResult $siteResult): SiteStatus
-    {
-        $pageResults = $siteResult->pageResults;
-
-        if ($pageResults->isEmpty()) {
-            return SiteStatus::Up;
-        }
-
-        $totalPages = $pageResults->count();
-        $reachablePages = $pageResults->filter(fn($result) => $result->isReachable())->count();
-
-        if ($reachablePages === $totalPages) {
-            return SiteStatus::Up;
-        }
-
-        if ($reachablePages === 0) {
-            return SiteStatus::TotallyDown;
-        }
-
-        return SiteStatus::PartiallyDown;
     }
 
     /**

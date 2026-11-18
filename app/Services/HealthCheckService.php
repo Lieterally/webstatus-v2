@@ -209,6 +209,8 @@ class HealthCheckService implements HealthCheckServiceInterface
         $responses = Http::pool(function (Pool $pool) use ($checks, $responseTimeout, $connectionTimeout, $onFinished) {
             foreach ($checks as $index => $check) {
                 $pool->as((string) $index)
+                    // Guzzle's default "GuzzleHttp/7" is often blocked by firewalls as a bot (403)
+                    ->withUserAgent('ITK-Webstatus/1.0 (+' . config('app.url') . ')')
                     ->timeout($responseTimeout)
                     ->connectTimeout($connectionTimeout)
                     ->withOptions([

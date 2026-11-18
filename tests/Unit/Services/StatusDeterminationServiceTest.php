@@ -200,3 +200,18 @@ describe('calculateAverageResponseTime', function () {
         expect($result)->toBe(150.0);
     });
 });
+
+it('counts a rate-limited page (429) as up, but a blocked page (403) as down', function () {
+    $service = new StatusDeterminationService();
+    $site = new Site();
+
+    expect($service->determineStatus($site, collect([
+        ['http_code' => 200, 'response_time_ms' => 100.0],
+        ['http_code' => 429, 'response_time_ms' => 50.0],
+    ])))->toBe(SiteStatus::Up);
+
+    expect($service->determineStatus($site, collect([
+        ['http_code' => 200, 'response_time_ms' => 100.0],
+        ['http_code' => 403, 'response_time_ms' => 50.0],
+    ])))->toBe(SiteStatus::PartiallyDown);
+});

@@ -12,7 +12,7 @@ interface StatusDeterminationServiceInterface
      * Determine site availability status from page results.
      *
      * Status Rules:
-     * - "up": All pages return 2xx or 3xx
+     * - "up": All pages return 2xx, 3xx or 429 (rate limited, still answering)
      * - "partially_down": Some pages fail, some succeed
      * - "totally_down": All pages fail or are unreachable
      * - No pages defined: defaults to "up"

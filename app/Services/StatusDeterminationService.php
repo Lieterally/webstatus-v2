@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\DTOs\PageCheckResult;
 use App\Enums\SiteStatus;
 use App\Models\Site;
 use Illuminate\Support\Collection;
@@ -11,8 +12,8 @@ class StatusDeterminationService implements StatusDeterminationServiceInterface
     /**
      * Determine site availability status from page results.
      *
-     * A page result is considered successful if its http_code is in the 2xx or 3xx range.
-     * A page result is considered failed if its http_code is outside 2xx/3xx or is 0 (unreachable).
+     * A page result is considered successful per PageCheckResult::isSuccessfulCode() (2xx, 3xx, 429).
+     * Any other code, or 0 (unreachable), is a failure.
      */
     public function determineStatus(Site $site, Collection $pageResults): SiteStatus
     {
@@ -23,7 +24,7 @@ class StatusDeterminationService implements StatusDeterminationServiceInterface
 
         $totalPages = $pageResults->count();
         $successfulPages = $pageResults->filter(function ($result) {
-            return $this->isSuccessfulResponse($result['http_code'] ?? 0);
+            return PageCheckResult::isSuccessfulCode($result['http_code'] ?? 0);
         })->count();
 
         if ($successfulPages === $totalPages) {
@@ -40,7 +41,7 @@ class StatusDeterminationService implements StatusDeterminationServiceInterface
     /**
      * Calculate average response time for reachable pages.
      *
-     * A page is considered reachable if its http_code is in the 2xx or 3xx range.
+     * A page is considered reachable per PageCheckResult::isSuccessfulCode().
      * Returns 0 if all pages are unreachable.
      */
     public function calculateAverageResponseTime(Collection $pageResults): float
@@ -50,7 +51,7 @@ class StatusDeterminationService implements StatusDeterminationServiceInterface
         }
 
         $reachablePages = $pageResults->filter(function ($result) {
-            return $this->isSuccessfulResponse($result['http_code'] ?? 0);
+            return PageCheckResult::isSuccessfulCode($result['http_code'] ?? 0);
         });
 
         if ($reachablePages->isEmpty()) {
@@ -62,13 +63,5 @@ class StatusDeterminationService implements StatusDeterminationServiceInterface
         });
 
         return $totalResponseTime / $reachablePages->count();
-    }
-
-    /**
-     * Determine if an HTTP response code indicates success (2xx or 3xx).
-     */
-    private function isSuccessfulResponse(int $httpCode): bool
-    {
-        return $httpCode >= 200 && $httpCode < 400;
     }
 }
