@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\CheckResult;
 use App\Models\Site;
 use App\Services\MonitoringServiceInterface;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -273,10 +274,13 @@ class Dashboard extends Component
 
         $this->isSiteRefreshing = true;
 
-        // Execute single site refresh
-        $monitoringService->refreshSite($siteId);
-
-        $this->isSiteRefreshing = false;
+        try {
+            $monitoringService->refreshSite($siteId);
+        } catch (LockTimeoutException) {
+            // A cycle is checking every site right now; its results arrive via polling
+        } finally {
+            $this->isSiteRefreshing = false;
+        }
 
         // Bust the site detail cache so the panel reloads fresh data
         $this->bustSelectedSiteCache();

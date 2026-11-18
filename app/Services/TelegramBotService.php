@@ -6,6 +6,7 @@ use App\Enums\SiteStatus;
 use App\Models\Site;
 use App\Models\SystemConfig;
 use App\Models\TelegramTarget;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -337,6 +338,9 @@ class TelegramBotService implements TelegramBotServiceInterface
             }
 
             $this->sendMessage($chatId, trim($message));
+        } catch (LockTimeoutException) {
+            // Lost the race to a cycle that started after the check above
+            $this->sendMessage($chatId, "⏳ A refresh cycle is already in progress. Please wait for it to complete.");
         } catch (\Throwable $e) {
             Log::error('Failed to execute refresh from Telegram', [
                 'chat_id' => $chatId,

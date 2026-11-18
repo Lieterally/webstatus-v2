@@ -561,7 +561,11 @@ php artisan route:cache
 php artisan view:cache
 php artisan event:cache
 sudo supervisorctl restart webstatus-worker:*
+sudo supervisorctl restart webstatus-telegram:*   # only if you use long polling
+sudo systemctl reload php8.4-fpm
 ```
+
+Long-running processes keep the old code in memory until they restart. Restart the Telegram poller, or a `/refresh` from Telegram runs the old monitoring code. Reload PHP-FPM so web requests stop using old cached code. Deploy just after a monitoring cycle finishes: a cycle that is already running keeps the old code until it ends.
 
 ### Restart Services
 

@@ -7,6 +7,7 @@ use App\Models\SystemConfig;
 use App\Services\MonitoringServiceInterface;
 use App\Services\TelegramBotServiceInterface;
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Log;
 
 class RunMonitoringCycleCommand extends Command
@@ -61,6 +62,13 @@ class RunMonitoringCycleCommand extends Command
             $this->resetConsecutiveFailures();
 
             $this->info("Monitoring cycle completed. Sites checked: {$result->sitesChecked}, Sites down: {$result->sitesDown}");
+
+            return self::SUCCESS;
+        } catch (LockTimeoutException) {
+            // Another cycle is running (e.g. a dashboard refresh); skipping is not a failure.
+            // Logged so a lock left by a killed process (held up to 15 min) is visible.
+            $this->info('A monitoring cycle is already running. Skipping.');
+            Log::warning('Monitoring cycle skipped: another cycle holds the lock');
 
             return self::SUCCESS;
         } catch (\Throwable $e) {

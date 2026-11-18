@@ -5,7 +5,9 @@ use App\Services\HealthCheckServiceInterface;
 use App\Services\MonitoringService;
 use App\Services\NotificationServiceInterface;
 use App\Services\StatsAggregationService;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 
 it('only checks monitored sites during a cycle', function () {
     $monitored = Site::factory()->create();
@@ -31,6 +33,26 @@ it('only checks monitored sites during a cycle', function () {
 
     expect($result->sitesChecked)->toBe(1);
     expect($unmonitored->fresh()->is_monitored)->toBeFalse();
+});
+
+it('refuses to start a cycle or site refresh while another one holds the lock', function () {
+    $site = Site::factory()->create();
+
+    $healthCheckService = Mockery::mock(HealthCheckServiceInterface::class);
+    $healthCheckService->shouldNotReceive('checkAllSites');
+    $healthCheckService->shouldNotReceive('checkSite');
+    $this->app->instance(HealthCheckServiceInterface::class, $healthCheckService);
+
+    $held = Cache::lock('monitoring_cycle_lock', 60);
+    $held->get();
+
+    $service = app(MonitoringService::class);
+    expect(fn () => $service->executeCycle())->toThrow(LockTimeoutException::class);
+    expect(fn () => $service->refreshSite($site->id))->toThrow(LockTimeoutException::class);
+    // The refused calls must not release the lock the running cycle still holds
+    expect(Cache::lock('monitoring_cycle_lock', 60)->get())->toBeFalse();
+
+    $held->release();
 });
 
 it('monitors new sites by default', function () {

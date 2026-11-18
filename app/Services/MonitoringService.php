@@ -12,6 +12,8 @@ use App\Models\CheckResult;
 use App\Models\DowntimeHistory;
 use App\Models\Site;
 use App\Models\SystemConfig;
+use Illuminate\Contracts\Cache\Lock;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -29,8 +31,14 @@ class MonitoringService implements MonitoringServiceInterface
     /** Maximum cycle interval in minutes */
     private const MAX_CYCLE_INTERVAL = 1440;
 
-    /** Cache key for tracking cycle in progress */
+    /** Cache key for tracking cycle in progress (read by the UI) */
     private const CYCLE_IN_PROGRESS_KEY = 'monitoring_cycle_in_progress';
+
+    /** Atomic lock so the scheduler, dashboard and Telegram never run checks at the same time */
+    private const CYCLE_LOCK_KEY = 'monitoring_cycle_lock';
+
+    /** Lock and flag lifetime: only a safety net if a process dies mid-cycle */
+    private const CYCLE_LOCK_SECONDS = 900;
 
     public function __construct(
         private readonly HealthCheckServiceInterface $healthCheckService,
@@ -51,11 +59,14 @@ class MonitoringService implements MonitoringServiceInterface
      * 7. Call NotificationService::evaluateAndNotify()
      * 8. Create CheckingCycle record
      * 9. Update cycle timestamp
+     *
+     * @throws LockTimeoutException when another cycle or site refresh is already running
      */
     public function executeCycle(): CycleResult
     {
+        $lock = $this->acquireCycleLock();
         $startedAt = now();
-        Cache::put(self::CYCLE_IN_PROGRESS_KEY, true, 300); // 5 minute max lock (safety net)
+        Cache::put(self::CYCLE_IN_PROGRESS_KEY, true, self::CYCLE_LOCK_SECONDS);
 
         try {
             // 1. Fetch all monitored sites with pages
@@ -146,6 +157,7 @@ class MonitoringService implements MonitoringServiceInterface
             );
         } finally {
             Cache::forget(self::CYCLE_IN_PROGRESS_KEY);
+            $lock->release();
         }
     }
 
@@ -154,50 +166,73 @@ class MonitoringService implements MonitoringServiceInterface
      *
      * Does NOT reset the global timer.
      * Still updates consecutive_down_count.
+     *
+     * @throws LockTimeoutException when a cycle or another site refresh is already running
      */
     public function refreshSite(int $siteId): SiteCheckResult
     {
         $site = Site::with('pages')->findOrFail($siteId);
 
-        $startedAt = now();
+        // Shares the cycle lock: both read and write the same site's down state and send alerts
+        $lock = $this->acquireCycleLock();
 
-        // Execute health check for single site
-        $siteResult = $this->healthCheckService->checkSite($site);
+        try {
+            $startedAt = now();
 
-        // Create a cycle record for this individual refresh
-        $cycle = CheckingCycle::create([
-            'started_at' => $startedAt,
-            'completed_at' => now(),
-            'trigger_type' => TriggerType::ManualSite,
-            'sites_checked' => 1,
-            'sites_down' => 0,
-        ]);
+            // Execute health check for single site
+            $siteResult = $this->healthCheckService->checkSite($site);
 
-        // Persist check results
-        $this->persistCheckResults($siteResult, $cycle->id);
+            // Create a cycle record for this individual refresh
+            $cycle = CheckingCycle::create([
+                'started_at' => $startedAt,
+                'completed_at' => now(),
+                'trigger_type' => TriggerType::ManualSite,
+                'sites_checked' => 1,
+                'sites_down' => 0,
+            ]);
 
-        // Determine status
-        $pageResults = $this->buildPageResultsCollection($siteResult);
-        $newStatus = $this->statusDeterminationService->determineStatus($site, $pageResults);
+            // Persist check results
+            $this->persistCheckResults($siteResult, $cycle->id);
 
-        // Calculate average response time
-        $avgResponseTime = $this->statusDeterminationService->calculateAverageResponseTime($pageResults);
+            // Determine status
+            $pageResults = $this->buildPageResultsCollection($siteResult);
+            $newStatus = $this->statusDeterminationService->determineStatus($site, $pageResults);
 
-        // Evaluate notification BEFORE updating site status
-        // (NotificationService needs the PREVIOUS status to detect recovery)
-        $this->notificationService->evaluateAndNotify(collect([$siteResult]));
+            // Calculate average response time
+            $avgResponseTime = $this->statusDeterminationService->calculateAverageResponseTime($pageResults);
 
-        // Update site status and consecutive_down_count
-        $this->updateSiteStatus($site, $newStatus, $avgResponseTime);
+            // Evaluate notification BEFORE updating site status
+            // (NotificationService needs the PREVIOUS status to detect recovery)
+            $this->notificationService->evaluateAndNotify(collect([$siteResult]));
 
-        // Update cycle sites_down
-        if ($newStatus !== SiteStatus::Up) {
-            $cycle->update(['sites_down' => 1]);
+            // Update site status and consecutive_down_count
+            $this->updateSiteStatus($site, $newStatus, $avgResponseTime);
+
+            // Update cycle sites_down
+            if ($newStatus !== SiteStatus::Up) {
+                $cycle->update(['sites_down' => 1]);
+            }
+
+            PublicStatusService::forget();
+
+            return $siteResult;
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Take the cycle lock without waiting, or throw if someone else holds it.
+     */
+    private function acquireCycleLock(): Lock
+    {
+        $lock = Cache::lock(self::CYCLE_LOCK_KEY, self::CYCLE_LOCK_SECONDS);
+
+        if (!$lock->get()) {
+            throw new LockTimeoutException('A monitoring cycle is already running.');
         }
 
-        PublicStatusService::forget();
-
-        return $siteResult;
+        return $lock;
     }
 
     /**

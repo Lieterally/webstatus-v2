@@ -135,7 +135,7 @@
         </x-itk.card>
 
         {{-- Outage events --}}
-        <x-itk.card title="Outage events" class="xl:col-span-2 min-w-0">
+        <x-itk.card title="Outage events" class="xl:col-span-3 min-w-0">
             <form method="GET" action="{{ route('downtime.index') }}" aria-label="Filter outage events"
                 class="flex flex-wrap items-center gap-3 mb-4">
                 <x-itk.toggle-group label="Time range" :options="$ranges" :value="$range" :hrefs="$rangeHrefs" />
@@ -268,27 +268,6 @@
                 <div class="mt-4">
                     {{ $events->links('vendor.pagination.daisy') }}
                 </div>
-            @endif
-        </x-itk.card>
-
-        {{-- Per-site breakdown --}}
-        <x-itk.card title="By website">
-            @if (empty($siteBreakdown) || count($siteBreakdown) === 0)
-                <p class="text-body text-ink-muted">No outages in this period.</p>
-            @else
-                <ul class="grid">
-                    @foreach ($siteBreakdown as $row)
-                        <li class="flex items-center justify-between gap-3 py-2.5 border-b border-line last:border-0">
-                            <div class="min-w-0">
-                                <p class="text-callout text-ink truncate">{{ $row['name'] }}</p>
-                                <p class="text-footnote text-ink-muted tabular-nums">{{ $fmtDuration($row['total_seconds']) }} downtime</p>
-                            </div>
-                            <x-itk.badge tone="neutral" class="shrink-0">
-                                {{ $row['outage_count'] }} {{ Str::plural('event', $row['outage_count']) }}
-                            </x-itk.badge>
-                        </li>
-                    @endforeach
-                </ul>
             @endif
         </x-itk.card>
 

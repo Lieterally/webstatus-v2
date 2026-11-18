@@ -5,12 +5,29 @@ use App\Models\NotificationLog;
 use App\Models\SystemConfig;
 use App\Services\MonitoringServiceInterface;
 use App\Services\TelegramBotServiceInterface;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 beforeEach(function () {
     // Seed default system configs
     SystemConfig::create(['key' => 'cycle_interval_minutes', 'value' => '10', 'updated_at' => now()]);
+});
+
+it('skips without counting a failure when another cycle is already running', function () {
+    $monitoringService = Mockery::mock(MonitoringServiceInterface::class);
+    $monitoringService->shouldReceive('executeCycle')
+        ->once()
+        ->andThrow(new LockTimeoutException('A monitoring cycle is already running.'));
+
+    $this->app->instance(MonitoringServiceInterface::class, $monitoringService);
+    Log::spy();
+
+    $this->artisan('app:run-monitoring-cycle')
+        ->assertExitCode(0);
+
+    expect(SystemConfig::getValue('consecutive_cycle_failures'))->toBeNull();
+    Log::shouldHaveReceived('warning')->with('Monitoring cycle skipped: another cycle holds the lock');
 });
 
 it('executes monitoring cycle successfully', function () {

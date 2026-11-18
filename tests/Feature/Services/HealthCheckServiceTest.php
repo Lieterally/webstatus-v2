@@ -297,3 +297,69 @@ it('handles base_url with trailing slash correctly', function () {
 
     expect($requestedUrls)->toContain('https://example.com/about');
 });
+
+it('logs every page to the live log, failures included, with a rolling concurrency limit', function () {
+    \App\Models\SystemConfig::create(['key' => 'concurrency_limit', 'value' => '2', 'updated_at' => now()]);
+
+    Http::fake(function ($request) {
+        if (str_contains($request->url(), '/down')) {
+            throw new \GuzzleHttp\Exception\ConnectException(
+                'cURL error 28: Operation timed out',
+                new \GuzzleHttp\Psr7\Request('GET', $request->url())
+            );
+        }
+
+        return Http::response('OK', 200);
+    });
+
+    $site = new Site(['name' => 'Mixed Site', 'base_url' => 'https://mixed.example']);
+    $site->id = 1;
+    $pages = collect(['/', '/a', '/down', '/b', '/c'])->map(function ($path, $i) {
+        $page = new Page(['path' => $path]);
+        $page->id = $i + 1;
+        $page->site_id = 1;
+
+        return $page;
+    });
+    $site->setRelation('pages', $pages);
+
+    $result = $this->service->checkSite($site);
+
+    // 5 pages with only 2 in flight at once: every page still gets checked, in order
+    expect($result->pageResults->pluck('pageId')->all())->toBe([1, 2, 3, 4, 5]);
+    expect($result->pageResults->firstWhere('pageId', 3)->errorType)->toBe(ErrorType::Timeout);
+
+    $log = \Illuminate\Support\Facades\Cache::get('monitoring_cycle_live_log');
+    expect($log)->toHaveCount(5);
+    expect(collect($log)->pluck('url'))->toContain('https://mixed.example/down');
+    expect(\Illuminate\Support\Facades\Cache::get('monitoring_cycle_total_pages'))->toBe(5);
+});
+
+it('keeps real page results when the live log cannot be written', function () {
+    Http::fake(['*' => Http::response('OK', 200)]);
+
+    // Setup writes succeed; every live-log write fails, as when Redis drops mid-cycle
+    \Illuminate\Support\Facades\Cache::shouldReceive('get')->andReturn([]);
+    \Illuminate\Support\Facades\Cache::shouldReceive('put')->andReturnUsing(
+        fn ($key, $value) => $key === 'monitoring_cycle_live_log' && $value !== []
+            ? throw new RuntimeException('cache down')
+            : true
+    );
+
+    $site = new Site(['name' => 'Healthy Site', 'base_url' => 'https://healthy.example']);
+    $site->id = 1;
+    $pages = collect(['/', '/a', '/b'])->map(function ($path, $i) {
+        $page = new Page(['path' => $path]);
+        $page->id = $i + 1;
+        $page->site_id = 1;
+
+        return $page;
+    });
+    $site->setRelation('pages', $pages);
+
+    $result = $this->service->checkSite($site);
+
+    expect($result->pageResults)->toHaveCount(3);
+    expect($result->pageResults->pluck('httpCode')->unique()->all())->toBe([200]);
+    expect($result->pageResults->pluck('errorType')->unique()->all())->toBe([ErrorType::None]);
+});

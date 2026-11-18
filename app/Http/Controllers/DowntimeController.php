@@ -74,21 +74,6 @@ class DowntimeController extends Controller
             ? Site::find($mostAffected->site_id)?->name
             : null;
 
-        // --- Per-site breakdown ---
-        $siteBreakdown = (clone $summaryQuery)
-            ->selectRaw('site_id, COUNT(*) as outage_count, SUM(CASE WHEN status != "active" THEN duration_seconds ELSE 0 END) as total_seconds')
-            ->groupBy('site_id')
-            ->with('site')
-            ->orderByDesc('outage_count')
-            ->get()
-            ->map(function ($row) {
-                return [
-                    'name' => $row->site?->name ?? 'Unknown',
-                    'outage_count' => $row->outage_count,
-                    'total_seconds' => $row->total_seconds ?? 0,
-                ];
-            });
-
         $sites = Site::orderBy('name')->get(['id', 'name']);
 
         // --- Gantt chart data (last 24 hours) ---
@@ -147,7 +132,6 @@ class DowntimeController extends Controller
             'activeNow',
             'totalDowntimeSeconds',
             'mostAffectedSite',
-            'siteBreakdown',
             'ganttData',
             'ganttLabels',
             'ganttStart',

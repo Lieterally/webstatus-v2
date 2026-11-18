@@ -12,6 +12,7 @@ use Illuminate\Http\Client\Pool;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class HealthCheckService implements HealthCheckServiceInterface
 {
@@ -21,7 +22,7 @@ class HealthCheckService implements HealthCheckServiceInterface
     /** Default response timeout in seconds */
     private const DEFAULT_RESPONSE_TIMEOUT = 50;
 
-    /** Default max concurrent requests per batch */
+    /** Default max requests in flight at once */
     private const DEFAULT_CONCURRENCY_LIMIT = 50;
 
     /**
@@ -75,29 +76,50 @@ class HealthCheckService implements HealthCheckServiceInterface
         Cache::put(self::CYCLE_LOG_KEY, [], 600);
     }
 
+    /** Seconds between live-log writes; the dashboard polls every 2 seconds */
+    private const LOG_FLUSH_SECONDS = 1;
+
     /**
-     * Append a log entry to the live log.
+     * Build one live-log entry for a finished page check.
      */
-    private function appendLogEntry(string $siteName, string $url, int $httpCode, string $errorType, float $responseTimeMs): void
+    private function logEntry(array $check, PageCheckResult $result): array
     {
-        $logs = Cache::get(self::CYCLE_LOG_KEY, []);
-        $logs[] = [
-            'site' => $siteName,
-            'url' => $url,
-            'http_code' => $httpCode,
-            'error_type' => $errorType,
-            'response_time_ms' => round($responseTimeMs, 1),
+        return [
+            'site' => $check['site_name'],
+            'url' => $check['url'],
+            'http_code' => $result->httpCode,
+            'error_type' => $result->errorType->value,
+            'response_time_ms' => round($result->responseTimeMs, 1),
             'time' => now()->format('H:i:s'),
         ];
-        Cache::put(self::CYCLE_LOG_KEY, $logs, 600);
+    }
+
+    /**
+     * Append buffered entries to the live log in one cache read and write.
+     *
+     * Best effort: this runs inside the pool's per-page callback, where an exception would
+     * replace that page's HTTP result and mark a healthy site down.
+     */
+    private function flushLogEntries(array &$entries): void
+    {
+        if ($entries === []) {
+            return;
+        }
+
+        try {
+            Cache::put(self::CYCLE_LOG_KEY, [...Cache::get(self::CYCLE_LOG_KEY, []), ...$entries], 600);
+        } catch (\Throwable $e) {
+            Log::warning('Could not write the monitoring live log', ['error' => $e->getMessage()]);
+        }
+
+        $entries = [];
     }
 
     /**
      * Check all pages of all provided sites concurrently.
      *
-     * Uses Laravel HTTP Client pool for concurrent requests with an overall
-     * cycle timeout of 10 seconds. Pages that don't complete within the cycle
-     * timeout are marked as unreachable.
+     * Uses one Laravel HTTP Client pool. Each page has its own connection and
+     * response timeout; a page that times out is marked as unreachable.
      *
      * @param Collection<int, Site> $sites
      * @return Collection<int, SiteCheckResult>
@@ -118,7 +140,6 @@ class HealthCheckService implements HealthCheckServiceInterface
         // Initialize live log for this cycle
         $this->initLiveLog($pageChecks->count());
 
-        // Execute all checks concurrently with cycle timeout
         $results = $this->executeChecks($pageChecks);
 
         // Group results by site and build SiteCheckResult DTOs
@@ -156,70 +177,67 @@ class HealthCheckService implements HealthCheckServiceInterface
     }
 
     /**
-     * Execute HTTP checks concurrently using Laravel HTTP Client pool
-     * with concurrency limiting via batches.
+     * Execute all HTTP checks in one pool with a rolling concurrency limit.
      *
-     * Processes requests in batches of CONCURRENCY_LIMIT to avoid
-     * overwhelming OS connection limits and DNS resolution.
+     * At most CONCURRENCY_LIMIT requests are in flight, and a new one starts as soon as any
+     * finishes, so one slow page no longer holds up a whole batch of others.
      *
      * @param Collection $pageChecks
      * @return Collection<int, PageCheckResult>
      */
     private function executeChecks(Collection $pageChecks): Collection
     {
-        $results = collect();
-
-        // Process in batches to limit concurrency
-        $batches = $pageChecks->chunk($this->getConcurrencyLimit());
-
-        foreach ($batches as $batch) {
-            $batchResults = $this->executeBatch($batch);
-            $results = $results->concat($batchResults);
-        }
-
-        return $results;
-    }
-
-    /**
-     * Execute a single batch of HTTP checks concurrently.
-     *
-     * @param Collection $batch
-     * @return Collection<int, PageCheckResult>
-     */
-    private function executeBatch(Collection $batch): Collection
-    {
-        $results = collect();
-        $batchArray = $batch->values()->all();
+        $checks = $pageChecks->values()->all();
         $responseTimeout = $this->getResponseTimeout();
         $connectionTimeout = $this->getConnectionTimeout();
 
-        $responses = Http::pool(function (Pool $pool) use ($batchArray, $responseTimeout, $connectionTimeout) {
-            foreach ($batchArray as $index => $check) {
+        $logBuffer = [];
+        $lastFlush = microtime(true);
+        // Runs as each page finishes, so the dashboard progress bar moves during the cycle.
+        // Must return $response: the pool collects this callback's return value, not the original.
+        $onFinished = function (array $check, mixed $response) use (&$logBuffer, &$lastFlush) {
+            $logBuffer[] = $this->logEntry($check, $this->buildResultFromResponse($check, $response));
+
+            if (microtime(true) - $lastFlush >= self::LOG_FLUSH_SECONDS) {
+                $this->flushLogEntries($logBuffer);
+                $lastFlush = microtime(true);
+            }
+
+            return $response;
+        };
+
+        $responses = Http::pool(function (Pool $pool) use ($checks, $responseTimeout, $connectionTimeout, $onFinished) {
+            foreach ($checks as $index => $check) {
                 $pool->as((string) $index)
                     ->timeout($responseTimeout)
                     ->connectTimeout($connectionTimeout)
                     ->withOptions([
                         'verify' => false,
                     ])
-                    ->get($check['url']);
+                    ->get($check['url'])
+                    ->then(
+                        fn ($response) => $onFinished($check, $response),
+                        fn ($reason) => $onFinished($check, $reason),
+                    );
             }
-        });
+        }, $this->getConcurrencyLimit());
 
-        foreach ($batchArray as $index => $check) {
-            $key = (string) $index;
-            $response = $responses[$key] ?? null;
+        $results = collect();
+
+        foreach ($checks as $index => $check) {
+            $response = $responses[(string) $index] ?? null;
 
             if ($response === null) {
                 $result = $this->buildUnreachableResult($check, ErrorType::ConnectionFailure);
+                $logBuffer[] = $this->logEntry($check, $result);
                 $results->push($result);
-                $this->appendLogEntry($check['site_name'], $check['url'], 0, ErrorType::ConnectionFailure->value, 0);
                 continue;
             }
 
-            $result = $this->buildResultFromResponse($check, $response);
-            $results->push($result);
-            $this->appendLogEntry($check['site_name'], $check['url'], $result->httpCode, $result->errorType->value, $result->responseTimeMs);
+            $results->push($this->buildResultFromResponse($check, $response));
         }
+
+        $this->flushLogEntries($logBuffer);
 
         return $results;
     }
