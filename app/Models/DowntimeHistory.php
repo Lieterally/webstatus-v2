@@ -14,7 +14,13 @@ class DowntimeHistory extends Model
         'duration_seconds',
         'affected_pages',
         'status',
+        'note',
+        'note_updated_by',
+        'note_updated_at',
     ];
+
+    /** Longest public note staff can write on an outage */
+    public const NOTE_MAX_LENGTH = 500;
 
     protected function casts(): array
     {
@@ -23,12 +29,19 @@ class DowntimeHistory extends Model
             'ended_at' => 'datetime',
             'affected_pages' => 'array',
             'duration_seconds' => 'integer',
+            'note_updated_at' => 'datetime',
         ];
     }
 
     public function site(): BelongsTo
     {
         return $this->belongsTo(Site::class);
+    }
+
+    /** The staff member who last changed the note */
+    public function noteAuthor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'note_updated_by');
     }
 
     /**

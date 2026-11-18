@@ -9,7 +9,14 @@ use App\Models\ITStaff;
 use App\Models\Page;
 use App\Models\Site;
 use App\Services\MonitoringServiceInterface;
+use App\Services\PageDiscovery;
+use App\Services\PublicStatusService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 class SiteController extends Controller
@@ -38,11 +45,28 @@ class SiteController extends Controller
             $query->where('responsible_person_id', $personId);
         }
 
-        $sites = $query->paginate(10)->withQueryString();
+        // Monitoring filter: monitored | not_monitored (anything else is ignored)
+        match (request('monitoring')) {
+            'monitored' => $query->where('is_monitored', true),
+            'not_monitored' => $query->where('is_monitored', false),
+            default => null,
+        };
+
+        // Public status page filter: public | private (anything else is ignored)
+        match (request('visibility')) {
+            'public' => $query->where('is_public', true),
+            'private' => $query->where('is_public', false),
+            default => null,
+        };
+
+        // ?show=all lists every matching site on one page (still a paginator, so the view stays the same)
+        $showAll = request('show') === 'all';
+        $perPage = $showAll ? max(1, (clone $query)->count()) : 10;
+        $sites = $query->paginate($perPage)->withQueryString();
         $categories = Category::orderBy('name')->get();
         $staffMembers = ITStaff::orderBy('name')->get();
 
-        return view('sites.index', compact('sites', 'categories', 'staffMembers'));
+        return view('sites.index', compact('sites', 'categories', 'staffMembers', 'showAll'));
     }
 
     /**
@@ -69,6 +93,8 @@ class SiteController extends Controller
             'base_url' => $validated['base_url'],
             'description' => $validated['description'] ?? null,
             'responsible_person_id' => $validated['responsible_person_id'],
+            'is_public' => (bool) ($validated['is_public'] ?? false),
+            'public_name' => $validated['public_name'] ?? null,
         ]);
 
         // Create associated pages
@@ -105,6 +131,8 @@ class SiteController extends Controller
             'base_url' => $validated['base_url'],
             'description' => $validated['description'] ?? null,
             'responsible_person_id' => $validated['responsible_person_id'],
+            'is_public' => (bool) ($validated['is_public'] ?? false),
+            'public_name' => $validated['public_name'] ?? null,
         ]);
 
         if (array_key_exists('is_monitored', $validated)) {
@@ -139,6 +167,80 @@ class SiteController extends Controller
      * Remove the specified site from storage.
      * The confirmation prompt is handled on the frontend (JavaScript/Alpine.js).
      */
+    /**
+     * Apply one action to several selected websites from the website manager list.
+     * Each site goes through the same path as its single-site equivalent: delete(), or
+     * MonitoringService::setMonitored() so open outages are closed the usual way.
+     */
+    public function bulk(Request $request, MonitoringServiceInterface $monitoringService): RedirectResponse
+    {
+        $validated = $request->validate([
+            'action' => ['required', 'in:delete,monitor_on,monitor_off,make_public,make_private'],
+            'ids' => ['required', 'array', 'min:1', 'max:1000'],
+            'ids.*' => ['integer', 'distinct', 'exists:sites,id'],
+        ], [
+            'ids.required' => 'Select at least one website, then choose an action.',
+            'ids.*.exists' => 'One of the selected websites no longer exists. Reload the page and try again.',
+            'action.in' => 'Choose one of the listed actions.',
+        ]);
+
+        $sites = Site::whereIn('id', $validated['ids'])->get();
+        $count = $sites->count();
+        $websites = $count . ' ' . Str::plural('website', $count);
+        $one = $count === 1;
+
+        switch ($validated['action']) {
+            case 'delete':
+                // Pages and check history cascade, as with a single delete
+                DB::transaction(fn () => $sites->each->delete());
+                $message = "Deleted {$websites}. " . ($one ? 'It is' : 'They are') . ' left out of future checking cycles.';
+                break;
+            case 'monitor_on':
+            case 'monitor_off':
+                $on = $validated['action'] === 'monitor_on';
+                $sites->each(fn (Site $site) => $monitoringService->setMonitored($site, $on));
+                $message = $on
+                    ? "Monitoring turned on for {$websites}."
+                    : "Monitoring turned off for {$websites}. " . ($one ? 'Its open outage is' : 'Their open outages are') . ' closed.';
+                break;
+            default:
+                $public = $validated['action'] === 'make_public';
+                Site::whereIn('id', $sites->pluck('id'))->update(['is_public' => $public]);
+                $message = $public
+                    ? "{$websites} now " . ($one ? 'shows' : 'show') . ' on the public status page.'
+                    : "{$websites} " . ($one ? 'is' : 'are') . ' now hidden from the public status page.';
+        }
+
+        PublicStatusService::forget();
+
+        return back()->with('success', ucfirst($message));
+    }
+
+    /**
+     * Suggest a website's main pages from its menu (or sitemap) for the site form.
+     * Adding pages by hand still works; nothing is saved here.
+     */
+    public function discoverPages(Request $request, PageDiscovery $discovery): JsonResponse
+    {
+        // Validated by hand: this app only renders exceptions as JSON for api/* routes,
+        // and the form's fetch() needs a JSON answer either way.
+        $validator = Validator::make($request->all(), [
+            'base_url' => ['required', 'string', 'max:255', 'url:http,https'],
+        ], [
+            'base_url.required' => 'Enter the base URL first, then suggest pages.',
+            'base_url.url' => 'Enter a base URL that starts with http:// or https://.',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => $validator->errors()->first('base_url'),
+                'errors' => $validator->errors()->toArray(),
+            ], 422);
+        }
+
+        return response()->json($discovery->discover($validator->validated()['base_url']));
+    }
+
     public function destroy(Site $site): RedirectResponse
     {
         // Deleting the site will cascade delete pages via foreign key constraint

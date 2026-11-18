@@ -134,7 +134,7 @@ it('shows all sites when no category filter is applied', function () {
 it('displays "No websites available" when no sites exist', function () {
     Livewire::actingAs($this->admin)
         ->test(Dashboard::class)
-        ->assertSee('No websites available');
+        ->assertSee('No websites found');
 });
 
 it('displays "No websites available" when filter yields no results', function () {
@@ -147,7 +147,7 @@ it('displays "No websites available" when filter yields no results', function ()
     Livewire::actingAs($this->admin)
         ->test(Dashboard::class)
         ->set('categoryFilter', $category2->id)
-        ->assertSee('No websites available');
+        ->assertSee('No websites found');
 });
 
 it('displays status badges with correct colors in table view', function () {
@@ -157,11 +157,12 @@ it('displays status badges with correct colors in table view', function () {
 
     Livewire::actingAs($this->admin)
         ->test(Dashboard::class)
-        ->assertSee('Totally Down')
-        ->assertSee('Partially Down')
-        ->assertSeeHtml('bg-[#DC2626]')
-        ->assertSeeHtml('bg-[#F59E0B]')
-        ->assertSeeHtml('bg-[#16A34A]');
+        ->assertSee('Partially down')
+        ->assertSee('Up')
+        // Status badges carry icon + word, coloured from the ITK tokens (never colour alone)
+        ->assertSeeHtml('bg-error-soft text-error')
+        ->assertSeeHtml('bg-warning-soft text-warning')
+        ->assertSeeHtml('bg-success-soft text-success');
 });
 
 it('shows responsible person in table view', function () {
@@ -181,7 +182,7 @@ it('displays categories in filter dropdown', function () {
         ->test(Dashboard::class)
         ->assertSee('Academic')
         ->assertSee('Administrative')
-        ->assertSee('All Categories');
+        ->assertSee('All categories');
 });
 
 it('defaults category filter to null (no filter)', function () {

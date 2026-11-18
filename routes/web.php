@@ -5,11 +5,13 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PublicStatusController;
 use App\Http\Controllers\SiteController;
 use App\Http\Controllers\SystemConfigController;
 use App\Http\Controllers\TelegramTargetController;
 use App\Http\Controllers\TelegramWebhookController;
 use App\Http\Controllers\ITStaffController;
+use App\Http\Controllers\OutageNoteController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -20,10 +22,21 @@ use Illuminate\Support\Facades\Route;
 | Routes accessible without authentication.
 */
 
-// Redirect root to login
-Route::get('/', function () {
-    return redirect('/login');
-});
+// Public status page (docs/PUBLIC-STATUS-PLAN.md). The data is cached, so the limit is
+// generous: a campus network puts many students behind one IP address during an outage.
+Route::get('/', [PublicStatusController::class, 'show'])
+    ->middleware('throttle:600,1')
+    ->name('status');
+
+// Incident history by month, filterable by category
+Route::get('/history', [PublicStatusController::class, 'history'])
+    ->middleware('throttle:600,1')
+    ->name('history');
+
+// Same data as JSON (browsers may cache it for 60 s)
+Route::get('/status.json', [PublicStatusController::class, 'json'])
+    ->middleware('throttle:600,1')
+    ->name('status.json');
 
 // Telegram webhook endpoint (public, no auth, CSRF exempted in bootstrap/app.php)
 Route::post('/telegram/webhook', TelegramWebhookController::class)
@@ -63,7 +76,16 @@ Route::middleware(['auth', 'role:admin'])->group(function () {
     // Downtime Details
     Route::get('/downtime', [DowntimeController::class, 'index'])->name('downtime.index');
 
+    // Public notes on outages (from the public status page squares and the downtime page)
+    Route::post('/outage-notes', [OutageNoteController::class, 'update'])
+        ->middleware('throttle:60,1')
+        ->name('outage-notes.update');
+
     // Website Manager - accessible by both Admin and Super_Admin
+    Route::post('/sites/bulk', [SiteController::class, 'bulk'])->name('sites.bulk');
+    Route::post('/sites/discover-pages', [SiteController::class, 'discoverPages'])
+        ->middleware('throttle:10,1')
+        ->name('sites.discover');
     Route::resource('sites', SiteController::class)->except(['show']);
 
     // Category Manager - accessible by both Admin and Super_Admin

@@ -39,7 +39,7 @@ it('displays the create site form with categories and staff', function () {
     $response = $this->actingAs($this->user)->get(route('sites.create'));
 
     $response->assertStatus(200);
-    $response->assertSee('Create Site');
+    $response->assertSee('Add website');
     $response->assertSee('Academic');
     $response->assertSee('John Doe');
 });
@@ -207,7 +207,7 @@ it('displays the edit site form', function () {
     $response = $this->actingAs($this->user)->get(route('sites.edit', $site));
 
     $response->assertStatus(200);
-    $response->assertSee('Edit Site');
+    $response->assertSee('Edit ' . $site->name);
     $response->assertSee('Test Site');
     $response->assertSee('https://example.com');
 });

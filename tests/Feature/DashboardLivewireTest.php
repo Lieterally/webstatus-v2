@@ -14,10 +14,10 @@ beforeEach(function () {
 it('renders dashboard component with summary cards', function () {
     Livewire::actingAs($this->admin)
         ->test(Dashboard::class)
-        ->assertSee('Total Sites')
-        ->assertSee('Sites Down')
-        ->assertSee('Sites Up')
-        ->assertSee('Last Cycle');
+        ->assertSee('Total sites')
+        ->assertSee('Sites down')
+        ->assertSee('Sites up')
+        ->assertSee('Last cycle');
 });
 
 it('displays correct total site count', function () {

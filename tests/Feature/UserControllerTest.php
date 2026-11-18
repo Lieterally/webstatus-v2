@@ -44,7 +44,7 @@ it('displays the create user form', function () {
     $response = $this->actingAs($this->superAdmin)->get(route('users.create'));
 
     $response->assertStatus(200);
-    $response->assertSee('Create User');
+    $response->assertSee('Add user');
 });
 
 it('stores a new user with valid data', function () {
@@ -169,7 +169,7 @@ it('displays the edit user form', function () {
     $response = $this->actingAs($this->superAdmin)->get(route('users.edit', $user));
 
     $response->assertStatus(200);
-    $response->assertSee('Edit User');
+    $response->assertSee('Edit ' . $user->username);
     $response->assertSee('editme');
 });
 

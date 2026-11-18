@@ -1,38 +1,23 @@
 @extends('layouts.app')
 
-@section('title', 'Create Category')
+@section('title', 'Add category')
 
 @section('content')
-    <div class="mb-6">
-        <a href="{{ route('categories.index') }}" class="btn btn-ghost btn-sm">&larr; Back to Categories</a>
-        <h1 class="text-2xl font-bold text-base-content mt-2">Create Category</h1>
-    </div>
+    <x-itk.back-link :href="route('categories.index')">Categories</x-itk.back-link>
+    <x-itk.page-header title="Add category" class="mt-1" />
 
-    <div class="card bg-base-100 shadow-sm max-w-lg">
-        <div class="card-body">
-            <form method="POST" action="{{ route('categories.store') }}">
-                @csrf
+    <x-itk.card class="max-w-lg">
+        <form method="POST" action="{{ route('categories.store') }}" class="grid gap-5">
+            @csrf
 
-                <div class="form-control mb-4">
-                    <label class="label" for="name">
-                        <span class="label-text">Name</span>
-                    </label>
-                    <input type="text" name="name" id="name" value="{{ old('name') }}"
-                        class="input input-bordered w-full" required autofocus>
-                    @error('name')
-                        <label class="label">
-                            <span class="label-text-alt text-error">{{ $message }}</span>
-                        </label>
-                    @enderror
-                </div>
+            <x-itk.field name="name" label="Name" required>
+                <x-itk.input :value="old('name')" autofocus />
+            </x-itk.field>
 
-                <div class="flex items-center justify-end space-x-3 pt-4 border-t border-base-200">
-                    <a href="{{ route('categories.index') }}" class="btn btn-ghost">Cancel</a>
-                    <button type="submit" class="btn btn-primary">
-                        Create
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
+            <div class="flex flex-wrap items-center justify-end gap-3 pt-5 border-t border-line">
+                <x-itk.button variant="secondary" :href="route('categories.index')">Cancel</x-itk.button>
+                <x-itk.button type="submit">Add category</x-itk.button>
+            </div>
+        </form>
+    </x-itk.card>
 @endsection

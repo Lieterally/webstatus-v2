@@ -1,318 +1,393 @@
 @extends('layouts.app')
 
-@section('title', 'Downtime Details')
+@section('title', 'Downtime details')
 
 @section('content')
-    <div class="flex items-center justify-between mb-6">
-        <div>
-            <h1 class="text-2xl font-bold text-base-content">Downtime Details</h1>
-            <p class="text-sm text-base-content/60 mt-1">Outage history across all monitored websites</p>
-        </div>
-    </div>
+    @php
+        $fmtDuration = function (int $seconds): string {
+            $h = intdiv($seconds, 3600);
+            $m = intdiv($seconds % 3600, 60);
+            return ($h > 0 ? $h . 'h ' : '') . $m . 'm';
+        };
+        $ranges = ['1d' => '1D', '3d' => '3D', '7d' => '7D', '1m' => '1M', '3m' => '3M', '6m' => '6M', '1y' => '1Y', 'all' => 'All'];
+        $rangeHrefs = collect($ranges)->mapWithKeys(fn ($label, $value) => [
+            $value => route('downtime.index', array_merge(request()->except('page'), ['range' => $value])),
+        ])->all();
+    @endphp
 
-    {{-- Summary Cards --}}
-    <div class="stats stats-vertical sm:stats-horizontal bg-base-100 shadow-sm w-full mb-6">
-        <div class="stat">
-            <div class="stat-figure text-error">
-                <i class="fa-regular fa-triangle-exclamation fa-lg"></i>
-            </div>
-            <div class="stat-title">Total Outage Events</div>
-            <div class="stat-value text-2xl">{{ $totalEvents }}</div>
-            <div class="stat-desc">in selected period</div>
-        </div>
+    <x-itk.page-header title="Downtime details" description="Outage history across all monitored websites." />
 
-        <div class="stat">
-            <div class="stat-figure text-error">
-                <i class="fa-solid fa-circle-dot fa-lg animate-pulse"></i>
-            </div>
-            <div class="stat-title">Currently Active</div>
-            <div class="stat-value text-2xl {{ $activeNow > 0 ? 'text-error' : 'text-success' }}">
-                {{ $activeNow }}
-            </div>
-            <div class="stat-desc">ongoing outages</div>
-        </div>
-
-        <div class="stat">
-            <div class="stat-figure text-warning">
-                <i class="fa-regular fa-clock fa-lg"></i>
-            </div>
-            <div class="stat-title">Total Downtime</div>
-            <div class="stat-value text-2xl">
-                @php
-                    $h = intdiv($totalDowntimeSeconds, 3600);
-                    $m = intdiv($totalDowntimeSeconds % 3600, 60);
-                @endphp
-                {{ $h > 0 ? $h . 'h ' : '' }}{{ $m }}m
-            </div>
-            <div class="stat-desc">in selected period</div>
-        </div>
-
-        <div class="stat">
-            <div class="stat-figure text-base-content/50">
-                <i class="fa-regular fa-globe fa-lg"></i>
-            </div>
-            <div class="stat-title">Most Affected</div>
-            <div class="stat-value text-lg truncate">{{ $mostAffectedSite ?? '—' }}</div>
-            <div class="stat-desc">highest outage count</div>
-        </div>
+    {{-- Summary tiles --}}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <x-itk.stat title="Outage events" :value="$totalEvents" icon="triangle-alert">in the selected period</x-itk.stat>
+        <x-itk.stat title="Ongoing now" :value="$activeNow" icon="activity" :tone="$activeNow > 0 ? 'danger' : 'success'">
+            {{ $activeNow > 0 ? 'outages still open' : 'no open outages' }}
+        </x-itk.stat>
+        <x-itk.stat title="Total downtime" :value="$fmtDuration($totalDowntimeSeconds)" icon="clock">in the selected period</x-itk.stat>
+        <x-itk.stat title="Most affected" icon="globe">
+            <p class="text-headline text-ink truncate mb-0.5">{{ $mostAffectedSite ?? '—' }}</p>
+            most outage events
+        </x-itk.stat>
     </div>
 
     <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
-        {{-- Gantt Chart (Last 24 Hours) --}}
-        <div class="xl:col-span-3 card bg-base-100 shadow-sm">
-            <div class="card-body">
-                <h2 class="card-title text-base mb-2">Downtime Timeline (Last 24 Hours)</h2>
-                @if (empty($ganttLabels))
-                    <p class="text-sm text-base-content/50">No downtime events in the last 24 hours.</p>
-                @else
-                    <div id="ganttChart" style="max-height: 400px; overflow-y: auto;"></div>
-                    <style>
-                        #ganttChart .apexcharts-xaxis {
-                            position: sticky;
-                            top: 0;
-                            z-index: 10;
-                        }
-                    </style>
-                @endif
-            </div>
-        </div>
+        {{-- Outages in the last 24 hours: grouped incidents (default) or one row per website --}}
+        <x-itk.card title="Outages in the last 24 hours" class="xl:col-span-3 min-w-0">
+            @if (empty($ganttLabels))
+                <x-itk.empty title="No downtime in the last 24 hours" icon="circle-check" class="py-6" />
+            @else
+                @php
+                    $clock = fn ($t) => $t->format('H.i');
+                    $incidentTime = function ($i) use ($clock) {
+                        $start = $i['start'];
+                        $prefix = $start->isToday() ? '' : $start->format('j M') . ', ';
+                        return $prefix . $clock($start) . ' – ' . ($i['end'] ? $clock($i['end']) : 'now') . ' WITA';
+                    };
+                    $siteCount = count($ganttLabels);
+                    $incidentCount = count($incidents);
+                @endphp
+                <div x-data="downtimeTimeline()" x-init="init()">
+                    <div role="tablist" aria-label="Outage view" class="flex gap-1 border-b border-line mb-4"
+                        x-on:keydown.right.prevent="select(tab === 'incidents' ? 'sites' : 'incidents', true)"
+                        x-on:keydown.left.prevent="select(tab === 'incidents' ? 'sites' : 'incidents', true)">
+                        @foreach (['incidents' => "Incidents ({$incidentCount})", 'sites' => "By website ({$siteCount})"] as $key => $tabLabel)
+                            <button type="button" role="tab" id="tab-{{ $key }}" aria-controls="panel-{{ $key }}"
+                                x-bind:aria-selected="(tab === '{{ $key }}').toString()" x-bind:tabindex="tab === '{{ $key }}' ? 0 : -1"
+                                x-on:click="select('{{ $key }}')"
+                                x-bind:class="tab === '{{ $key }}'
+                                    ? 'text-ink font-semibold after:absolute after:inset-x-2 after:-bottom-px after:h-0.75 after:rounded-t-xs after:bg-primary'
+                                    : 'text-ink-muted hover:text-ink hover:bg-surface-sunken'"
+                                class="relative min-h-11 px-4 rounded-t-sm text-callout cursor-pointer">
+                                {{ $tabLabel }}
+                            </button>
+                        @endforeach
+                    </div>
 
-        {{-- Outage Events Table --}}
-        <div class="xl:col-span-2 card bg-base-100 shadow-sm">
-            <div class="card-body p-0">
+                    {{-- Incidents: how many websites were down at once, then the grouped outages --}}
+                    <div id="panel-incidents" role="tabpanel" aria-labelledby="tab-incidents" tabindex="0"
+                        x-bind:style="tab === 'incidents' ? '' : 'display: none'">
+                        <p class="text-footnote text-ink-muted">
+                            Websites down at the same time. Peak: {{ $peakDown }} {{ \Illuminate\Support\Str::plural('website', $peakDown) }}.
+                        </p>
+                        <div id="concurrencyChart" role="img"
+                            aria-label="Number of websites down over the last 24 hours. Peak: {{ $peakDown }}."></div>
 
-                {{-- Filters --}}
-                <div class="p-4 border-b border-base-200">
-                    <form method="GET" action="{{ route('downtime.index') }}" class="flex flex-wrap items-center gap-3">
-
-                        {{-- Time range --}}
-                        <div class="join">
-                            @foreach (['1d' => '1D', '3d' => '3D', '7d' => '7D', '1m' => '1M', '3m' => '3M', '6m' => '6M', '1y' => '1Y', 'all' => 'All'] as $value => $label)
-                                <a href="{{ route('downtime.index', array_merge(request()->except('page'), ['range' => $value])) }}"
-                                    class="join-item btn btn-sm {{ $range === $value ? 'btn-primary' : 'btn-ghost' }}">
-                                    {{ $label }}
-                                </a>
+                        <ul class="grid mt-2" aria-label="Incidents">
+                            @foreach ($incidents as $n => $incident)
+                                <li class="py-3 border-t border-line" x-data="{ open: false }"
+                                    @if ($n >= 8) style="display: none" x-bind:style="showAllIncidents ? '' : 'display: none'" @endif>
+                                    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                                        @if ($incident['ongoing'])
+                                            <x-itk.badge tone="danger" icon="circle-x">Ongoing</x-itk.badge>
+                                        @else
+                                            <x-itk.badge tone="success" icon="circle-check">Resolved</x-itk.badge>
+                                        @endif
+                                        <span class="text-callout font-semibold text-ink tabular-nums">{{ $incidentTime($incident) }}</span>
+                                        <span class="text-callout font-normal text-ink-muted">
+                                            {{ \App\Services\PublicStatusService::formatDuration($incident['duration_seconds']) }}{{ $incident['ongoing'] ? ' so far' : '' }}
+                                        </span>
+                                        @if ($incident['count'] === 1)
+                                            <span class="text-callout font-normal text-ink">{{ $incident['sites'][0] }}</span>
+                                        @else
+                                            <span class="text-callout font-normal text-ink">{{ $incident['count'] }} websites down</span>
+                                            <x-itk.button variant="ghost" size="sm" class="max-lg:min-h-11"
+                                                x-on:click="open = !open" aria-controls="incident-{{ $n }}-sites"
+                                                x-bind:aria-expanded="open.toString()" aria-expanded="false">
+                                                <span x-text="open ? 'Hide websites' : 'Show websites'">Show websites</span>
+                                                <x-itk.icon name="chevron-down" size="16" class="transition-transform duration-200" x-bind:class="open && 'rotate-180'" />
+                                            </x-itk.button>
+                                        @endif
+                                    </div>
+                                    @if ($incident['count'] > 1)
+                                        <ul id="incident-{{ $n }}-sites" class="flex flex-wrap gap-2 mt-3" style="display: none" x-bind:style="open ? '' : 'display: none'">
+                                            @foreach ($incident['sites'] as $siteName)
+                                                <li class="px-2 py-0.5 rounded-xs bg-surface-sunken border border-line text-footnote text-ink">{{ $siteName }}</li>
+                                            @endforeach
+                                        </ul>
+                                    @endif
+                                </li>
                             @endforeach
-                        </div>
-
-                        {{-- Site filter --}}
-                        <select name="site" class="select select-sm select-bordered" onchange="this.form.submit()">
-                            <option value="">All Sites</option>
-                            @foreach ($sites as $s)
-                                <option value="{{ $s->id }}" {{ $siteId == $s->id ? 'selected' : '' }}>
-                                    {{ $s->name }}
-                                </option>
-                            @endforeach
-                        </select>
-
-                        {{-- Status filter --}}
-                        <select name="status" class="select select-sm select-bordered" onchange="this.form.submit()">
-                            <option value="" {{ $status === '' ? 'selected' : '' }}>All Status</option>
-                            <option value="active" {{ $status === 'active' ? 'selected' : '' }}>Active</option>
-                            <option value="resolved" {{ $status === 'resolved' ? 'selected' : '' }}>Resolved</option>
-                            <option value="monitoring_stopped" {{ $status === 'monitoring_stopped' ? 'selected' : '' }}>
-                                Monitoring Stopped</option>
-                        </select>
-
-                        {{-- Hidden range input so site/status filter preserves range --}}
-                        <input type="hidden" name="range" value="{{ $range }}">
-
-                        @if ($siteId || $status)
-                            <a href="{{ route('downtime.index', ['range' => $range]) }}"
-                                class="btn btn-sm btn-ghost">Clear</a>
+                        </ul>
+                        @if ($incidentCount > 8)
+                            <x-itk.button variant="ghost" class="mt-1" x-on:click="showAllIncidents = !showAllIncidents">
+                                <span x-text="showAllIncidents ? 'Show fewer incidents' : 'Show all {{ $incidentCount }} incidents'">Show all {{ $incidentCount }} incidents</span>
+                            </x-itk.button>
                         @endif
-                    </form>
-                </div>
-
-                {{-- Table --}}
-                <div class="overflow-x-auto">
-                    <table class="table table-zebra table-sm">
-                        <thead>
-                            <tr>
-                                <th>Site</th>
-                                <th>Started</th>
-                                <th>Ended</th>
-                                <th>Duration</th>
-                                <th>Pages</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @forelse ($events as $event)
-                                <tr class="{{ $event->isActive() ? 'bg-error/5' : '' }}">
-                                    <td class="font-medium">{{ $event->site?->name ?? '—' }}</td>
-                                    <td class="text-sm text-base-content/70 whitespace-nowrap">
-                                        {{ $event->started_at->format('d M Y H:i') }}
-                                    </td>
-                                    <td class="text-sm text-base-content/70 whitespace-nowrap">
-                                        @if ($event->isActive())
-                                            <span class="text-error">Ongoing</span>
-                                        @else
-                                            {{ $event->ended_at->format('d M Y H:i') }}
-                                        @endif
-                                    </td>
-                                    <td class="text-sm whitespace-nowrap">
-                                        @php
-                                            $secs = $event->getLiveDurationSeconds();
-                                            $dh = intdiv($secs, 3600);
-                                            $dm = intdiv($secs % 3600, 60);
-                                            $ds = $secs % 60;
-                                        @endphp
-                                        {{ $dh > 0 ? $dh . 'h ' : '' }}{{ $dm > 0 ? $dm . 'm ' : '' }}{{ $dh === 0 && $dm === 0 ? $ds . 's' : '' }}
-                                        @if ($event->isActive())
-                                            <span class="text-error/60 text-xs">(live)</span>
-                                        @endif
-                                    </td>
-                                    <td class="text-sm text-base-content/60 max-w-xs truncate">
-                                        @if (!empty($event->affected_pages))
-                                            <span class="tooltip tooltip-left"
-                                                data-tip="{{ implode(', ', $event->affected_pages) }}">
-                                                {{ count($event->affected_pages) }}
-                                                {{ Str::plural('page', count($event->affected_pages)) }}
-                                            </span>
-                                        @else
-                                            —
-                                        @endif
-                                    </td>
-                                    <td>
-                                        @if ($event->isActive())
-                                            <span class="badge badge-error badge-sm gap-1">
-                                                <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
-                                                Active
-                                            </span>
-                                        @elseif ($event->wasMonitoringStopped())
-                                            <span class="badge badge-ghost badge-sm whitespace-nowrap">Monitoring Stopped</span>
-                                        @else
-                                            <span class="badge badge-ghost badge-sm">Resolved</span>
-                                        @endif
-                                    </td>
-                                </tr>
-                            @empty
-                                <tr>
-                                    <td colspan="6" class="text-center text-base-content/50 py-8">
-                                        No outage events found for the selected filters.
-                                    </td>
-                                </tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                </div>
-
-                {{-- Pagination --}}
-                @if ($events->hasPages())
-                    <div class="p-4 border-t border-base-200">
-                        {{ $events->links('vendor.pagination.daisy') }}
                     </div>
+
+                    {{-- By website: compact rows, most downtime first --}}
+                    <div id="panel-sites" role="tabpanel" aria-labelledby="tab-sites" tabindex="0" style="display: none"
+                        x-bind:style="tab === 'sites' ? '' : 'display: none'">
+                        <ul class="flex flex-wrap gap-x-6 gap-y-2 mb-2 text-callout font-normal text-ink" aria-label="Legend">
+                            <li class="flex items-center gap-2"><span class="inline-block w-4 h-3 rounded-xs bg-error" aria-hidden="true"></span>Ongoing</li>
+                            <li class="flex items-center gap-2"><span class="inline-block w-4 h-3 rounded-xs bg-chart-4" aria-hidden="true"></span>Resolved</li>
+                        </ul>
+                        <div id="ganttChart" role="img" aria-label="Outages per website over the last 24 hours, most downtime first"></div>
+                        @if ($siteCount > 10)
+                            <x-itk.button variant="ghost" class="mt-1" x-on:click="toggleAllSites()">
+                                <span x-text="allSites ? 'Show the 10 most affected' : 'Show all {{ $siteCount }} websites'">Show all {{ $siteCount }} websites</span>
+                            </x-itk.button>
+                        @endif
+                    </div>
+                </div>
+            @endif
+        </x-itk.card>
+
+        {{-- Outage events --}}
+        <x-itk.card title="Outage events" class="xl:col-span-2 min-w-0">
+            <form method="GET" action="{{ route('downtime.index') }}" aria-label="Filter outage events"
+                class="flex flex-wrap items-center gap-3 mb-4">
+                <x-itk.toggle-group label="Time range" :options="$ranges" :value="$range" :hrefs="$rangeHrefs" />
+
+                <x-itk.select name="site" aria-label="Filter by website" onchange="this.form.submit()" class="w-full sm:w-auto">
+                    <option value="">All websites</option>
+                    @foreach ($sites as $s)
+                        <option value="{{ $s->id }}" @selected($siteId == $s->id)>{{ $s->name }}</option>
+                    @endforeach
+                </x-itk.select>
+
+                <x-itk.select name="status" aria-label="Filter by status" onchange="this.form.submit()" class="w-full sm:w-auto">
+                    <option value="" @selected($status === '')>All statuses</option>
+                    <option value="active" @selected($status === 'active')>Ongoing</option>
+                    <option value="resolved" @selected($status === 'resolved')>Resolved</option>
+                    <option value="monitoring_stopped" @selected($status === 'monitoring_stopped')>Monitoring stopped</option>
+                </x-itk.select>
+
+                {{-- Keeps the range when the site or status filter changes --}}
+                <input type="hidden" name="range" value="{{ $range }}">
+
+                <noscript><x-itk.button type="submit" variant="secondary">Apply filters</x-itk.button></noscript>
+
+                @if ($siteId || $status)
+                    <x-itk.button variant="ghost" icon="x" :href="route('downtime.index', ['range' => $range])">Clear filters</x-itk.button>
                 @endif
-            </div>
-        </div>
+            </form>
 
-        {{-- Per-site Breakdown --}}
-        <div class="card bg-base-100 shadow-sm">
-            <div class="card-body">
-                <h2 class="card-title text-base mb-4">Site Breakdown</h2>
+            @if ($events->isEmpty())
+                <x-itk.empty title="No outage events" icon="circle-check" class="py-6">
+                    Nothing matches the selected period and filters.
+                </x-itk.empty>
+            @else
+                <x-itk.table caption="Outage events" hide-caption caption-id="outage-events-caption">
+                    <thead>
+                        <tr>
+                            <th scope="col">Website</th>
+                            <th scope="col">Started</th>
+                            <th scope="col">Ended</th>
+                            <th scope="col" class="itk-num">Duration</th>
+                            <th scope="col">Pages</th>
+                            <th scope="col">Status</th>
+                            <th scope="col">Public note</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($events as $event)
+                            @php
+                                $secs = $event->getLiveDurationSeconds();
+                                $dh = intdiv($secs, 3600);
+                                $dm = intdiv($secs % 3600, 60);
+                                $ds = $secs % 60;
+                            @endphp
+                            <tr @class(['bg-error-soft' => $event->isActive()])>
+                                <th scope="row">{{ $event->site?->name ?? '—' }}</th>
+                                <td class="tabular-nums">{{ $event->started_at->format('d M Y H:i') }}</td>
+                                <td class="tabular-nums">
+                                    @if ($event->isActive())
+                                        <span class="text-ink-muted">Not yet</span>
+                                    @else
+                                        {{ $event->ended_at->format('d M Y H:i') }}
+                                    @endif
+                                </td>
+                                <td class="itk-num">
+                                    {{ $dh > 0 ? $dh . 'h ' : '' }}{{ $dm > 0 ? $dm . 'm ' : '' }}{{ $dh === 0 && $dm === 0 ? $ds . 's' : '' }}
+                                    @if ($event->isActive())
+                                        <span class="text-footnote text-ink-muted">(live)</span>
+                                    @endif
+                                </td>
+                                <td>
+                                    @if (! empty($event->affected_pages))
+                                        <x-itk.tooltip :id="'event-pages-' . $event->id" :content="implode(', ', $event->affected_pages)">
+                                            <button type="button" aria-describedby="event-pages-{{ $event->id }}"
+                                                class="min-h-9 px-1 rounded-xs underline decoration-dotted underline-offset-3 cursor-help">
+                                                {{ count($event->affected_pages) }} {{ Str::plural('page', count($event->affected_pages)) }}
+                                            </button>
+                                        </x-itk.tooltip>
+                                    @else
+                                        <span class="text-ink-muted">—</span>
+                                    @endif
+                                </td>
+                                <td>
+                                    @if ($event->isActive())
+                                        <x-itk.badge tone="danger" icon="circle-x">Ongoing</x-itk.badge>
+                                    @elseif ($event->wasMonitoringStopped())
+                                        <x-itk.badge tone="neutral" icon="circle-pause">Monitoring stopped</x-itk.badge>
+                                    @else
+                                        <x-itk.badge tone="success" icon="circle-check">Resolved</x-itk.badge>
+                                    @endif
+                                </td>
+                                {{-- Public note: shown on the status page and incident history; same note as the public day squares --}}
+                                <td class="min-w-60 align-top" x-data="{ editing: false }">
+                                    <div x-show="!editing" class="grid gap-1 justify-items-start">
+                                        @if ($event->note)
+                                            <p class="text-callout font-normal text-ink whitespace-pre-line break-words line-clamp-3">{{ $event->note }}</p>
+                                            @if ($event->note_updated_at)
+                                                <p class="text-footnote text-ink-muted">
+                                                    {{ $event->noteAuthor?->username ?? 'Removed user' }} · {{ $event->note_updated_at->format('d M Y H:i') }}
+                                                </p>
+                                            @endif
+                                        @endif
+                                        <x-itk.button variant="ghost" size="sm" :icon="$event->note ? 'square-pen' : 'message-square-text'"
+                                            class="max-lg:min-h-11 -ml-3"
+                                            x-on:click="editing = true; $nextTick(() => $refs.note.focus())">
+                                            {{ $event->note ? 'Edit note' : 'Add note' }}<span class="sr-only"> for the outage on {{ $event->site?->name }} at {{ $event->started_at->format('d M Y H:i') }}</span>
+                                        </x-itk.button>
+                                    </div>
+                                    <form x-show="editing" x-cloak method="POST" action="{{ route('outage-notes.update') }}"
+                                        class="grid gap-2" x-on:keydown.escape="editing = false">
+                                        @csrf
+                                        <input type="hidden" name="notes[0][id]" value="{{ $event->id }}">
+                                        <x-itk.textarea rows="2" name="notes[0][note]" id="note-{{ $event->id }}" x-ref="note"
+                                            maxlength="{{ \App\Models\DowntimeHistory::NOTE_MAX_LENGTH }}"
+                                            aria-label="Public note for the outage on {{ $event->site?->name }} at {{ $event->started_at->format('d M Y H:i') }}"
+                                            placeholder="What happened, or what is being done">{{ $event->note }}</x-itk.textarea>
+                                        <p class="text-footnote text-ink-muted">Everyone can see this note on the public status page.</p>
+                                        <div class="flex gap-2">
+                                            <x-itk.button type="submit" size="sm" class="max-lg:min-h-11">Save</x-itk.button>
+                                            <x-itk.button variant="ghost" size="sm" class="max-lg:min-h-11" x-on:click="editing = false">Cancel</x-itk.button>
+                                        </div>
+                                    </form>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </x-itk.table>
+            @endif
 
-                @forelse ($siteBreakdown as $row)
-                    <div class="flex items-center justify-between py-2 border-b border-base-200 last:border-0">
-                        <div class="flex-1 min-w-0">
-                            <p class="text-sm font-medium truncate">{{ $row['name'] }}</p>
-                            <p class="text-xs text-base-content/50">
-                                @php
-                                    $bh = intdiv($row['total_seconds'], 3600);
-                                    $bm = intdiv($row['total_seconds'] % 3600, 60);
-                                @endphp
-                                {{ $bh > 0 ? $bh . 'h ' : '' }}{{ $bm }}m downtime
-                            </p>
-                        </div>
-                        <span class="badge badge-ghost badge-sm ml-2 shrink-0">
-                            {{ $row['outage_count'] }} {{ Str::plural('event', $row['outage_count']) }}
-                        </span>
-                    </div>
-                @empty
-                    <p class="text-sm text-base-content/50">No data for this period.</p>
-                @endforelse
-            </div>
-        </div>
+            @if ($events->hasPages())
+                <div class="mt-4">
+                    {{ $events->links('vendor.pagination.daisy') }}
+                </div>
+            @endif
+        </x-itk.card>
+
+        {{-- Per-site breakdown --}}
+        <x-itk.card title="By website">
+            @if (empty($siteBreakdown) || count($siteBreakdown) === 0)
+                <p class="text-body text-ink-muted">No outages in this period.</p>
+            @else
+                <ul class="grid">
+                    @foreach ($siteBreakdown as $row)
+                        <li class="flex items-center justify-between gap-3 py-2.5 border-b border-line last:border-0">
+                            <div class="min-w-0">
+                                <p class="text-callout text-ink truncate">{{ $row['name'] }}</p>
+                                <p class="text-footnote text-ink-muted tabular-nums">{{ $fmtDuration($row['total_seconds']) }} downtime</p>
+                            </div>
+                            <x-itk.badge tone="neutral" class="shrink-0">
+                                {{ $row['outage_count'] }} {{ Str::plural('event', $row['outage_count']) }}
+                            </x-itk.badge>
+                        </li>
+                    @endforeach
+                </ul>
+            @endif
+        </x-itk.card>
 
     </div>
 
-    @if (!empty($ganttLabels))
+    @if (! empty($ganttLabels))
         @push('scripts')
             <script>
-                document.addEventListener('DOMContentLoaded', function() {
+                // Outages card: "websites down" chart + incident list, and the compact per-website Gantt.
+                function downtimeTimeline() {
+                    const concurrency = @js($concurrency);
                     const ganttData = @js($ganttData);
-                    const chartHeight = Math.max(250, ganttData.length * 40 + 80);
+                    const labels = @js($ganttLabels);
+                    const peak = @js($peakDown);
+                    const windowStart = @js($ganttStart->getTimestampMs());
+                    const windowEnd = @js(now()->getTimestampMs());
+                    const ROW = 32;
+                    const xaxis = () => ({
+                        type: 'datetime', min: windowStart, max: windowEnd, tickAmount: 12,
+                        labels: { datetimeUTC: false, format: 'HH:mm' },
+                    });
+                    // Charts live outside Alpine's reactive data, so destroy() reaches the real objects
+                    let concurrencyChart = null;
+                    let ganttChart = null;
 
-                    const options = {
-                        series: [{
-                            data: ganttData
-                        }],
-                        chart: {
-                            type: 'rangeBar',
-                            height: chartHeight,
-                            toolbar: {
-                                show: false
-                            },
-                            zoom: {
-                                enabled: true
-                            },
+                    return {
+                        tab: 'incidents',
+                        showAllIncidents: false,
+                        allSites: false,
+                        init() {
+                            this.$nextTick(() => this.renderConcurrency());
+                            window.addEventListener('itk-theme-change', () => {
+                                this.renderConcurrency();
+                                if (ganttChart) this.renderGantt();
+                            });
                         },
-                        plotOptions: {
-                            bar: {
-                                horizontal: true,
-                                barHeight: '50%',
-                                borderRadius: 6,
-                                rangeBarGroupRows: true,
-                            }
+                        select(tab, focus = false) {
+                            this.tab = tab;
+                            this.$nextTick(() => {
+                                if (focus) document.getElementById('tab-' + tab).focus();
+                                if (tab === 'sites' && !ganttChart) this.renderGantt();
+                            });
                         },
-                        xaxis: {
-                            type: 'datetime',
-                            position: 'top',
-                            min: @js($ganttStart->getTimestampMs()),
-                            max: @js(now()->getTimestampMs()),
-                            labels: {
-                                datetimeUTC: false,
-                                format: 'HH:mm',
-                            },
-                            tickAmount: 24,
+                        toggleAllSites() {
+                            this.allSites = !this.allSites;
+                            this.renderGantt();
                         },
-                        yaxis: {
-                            labels: {
-                                style: {
-                                    fontSize: '12px'
-                                }
-                            }
+                        renderConcurrency() {
+                            const colors = window.itkChartColors();
+                            if (concurrencyChart) concurrencyChart.destroy();
+                            concurrencyChart = new ApexCharts(document.getElementById('concurrencyChart'), {
+                                series: [{ name: 'Websites down', data: concurrency }],
+                                chart: { type: 'area', height: 180, toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false } },
+                                stroke: { curve: 'stepline', width: 2 },
+                                fill: { type: 'solid', opacity: 0.15 },
+                                colors: [colors.danger],
+                                dataLabels: { enabled: false },
+                                xaxis: xaxis(),
+                                yaxis: {
+                                    min: 0, max: Math.max(peak, 1), tickAmount: Math.min(Math.max(peak, 1), 4),
+                                    labels: { formatter: (v) => Math.round(v) },
+                                },
+                                grid: { borderColor: colors.grid },
+                                tooltip: {
+                                    x: { format: 'dd MMM HH:mm' },
+                                    y: { formatter: (v) => v + (v === 1 ? ' website down' : ' websites down') },
+                                },
+                                legend: { show: false },
+                            });
+                            concurrencyChart.render();
                         },
-                        grid: {
-                            row: {
-                                colors: ['#f8f8f8', 'transparent'],
-                                opacity: 0.5,
-                            },
-                            xaxis: {
-                                lines: {
-                                    show: true
-                                }
-                            },
-                            yaxis: {
-                                lines: {
-                                    show: false
-                                }
-                            },
-                        },
-                        tooltip: {
-                            x: {
-                                format: 'dd MMM HH:mm'
-                            },
-                        },
-                        legend: {
-                            show: false
+                        renderGantt() {
+                            const colors = window.itkChartColors();
+                            const colorFor = { active: colors.danger, resolved: colors.series[3] };
+                            const shown = this.allSites ? labels : labels.slice(0, 10);
+                            const keep = new Set(shown);
+                            if (ganttChart) ganttChart.destroy();
+                            ganttChart = new ApexCharts(document.getElementById('ganttChart'), {
+                                series: [{
+                                    data: ganttData.filter((d) => keep.has(d.x))
+                                        .map((d) => ({ ...d, fillColor: colorFor[d.state] ?? colors.series[3] })),
+                                }],
+                                chart: { type: 'rangeBar', height: shown.length * ROW + 70, toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false } },
+                                plotOptions: { bar: { horizontal: true, barHeight: '60%', borderRadius: 3, rangeBarGroupRows: true } },
+                                xaxis: { ...xaxis(), position: 'top' },
+                                yaxis: { labels: { style: { fontSize: '12px' }, maxWidth: 200 } },
+                                grid: {
+                                    borderColor: colors.grid,
+                                    row: { colors: [window.itkToken('surface-sunken'), 'transparent'], opacity: 0.5 },
+                                    xaxis: { lines: { show: true } },
+                                    yaxis: { lines: { show: false } },
+                                },
+                                tooltip: { x: { format: 'dd MMM HH:mm' } },
+                                legend: { show: false },
+                            });
+                            ganttChart.render();
                         },
                     };
-
-                    const chart = new ApexCharts(document.getElementById('ganttChart'), options);
-                    chart.render();
-                });
+                }
             </script>
         @endpush
     @endif

@@ -1,0 +1,64 @@
+/* ITK component rules that utilities can't express cleanly (theme-specific selectors,
+   pseudo-elements). Ported from design-system/reference/components.css. Tokens only. */
+
+/* Toaster: bottom on phones, bottom-right from 768px */
+.itk-toaster {
+    position: fixed;
+    z-index: var(--itk-z-toast);
+    left: var(--itk-space-4);
+    right: var(--itk-space-4);
+    bottom: calc(var(--itk-space-4) + env(safe-area-inset-bottom));
+    display: grid;
+    gap: var(--itk-space-2);
+    justify-items: center;
+    pointer-events: none;
+}
+@media (min-width: 768px) {
+    .itk-toaster { left: auto; right: var(--itk-space-6); justify-items: end; }
+}
+/* Toasts sit on surface-inverse, so their icons use the opposite theme's status colors */
+.itk-toast-success .itk-toast-icon { color: var(--itk-green-300); }
+.itk-toast-danger .itk-toast-icon { color: var(--itk-red-300); }
+.itk-toast-warning .itk-toast-icon { color: var(--itk-gold-300); }
+.itk-toast-info .itk-toast-icon { color: var(--itk-blue-300); }
+[data-theme="dark"] .itk-toast-success .itk-toast-icon { color: var(--itk-green-600); }
+[data-theme="dark"] .itk-toast-danger .itk-toast-icon { color: var(--itk-red-600); }
+[data-theme="dark"] .itk-toast-warning .itk-toast-icon { color: var(--itk-gold-700); }
+[data-theme="dark"] .itk-toast-info .itk-toast-icon { color: var(--itk-blue-700); }
+.itk-toast-x:hover { background: color-mix(in srgb, var(--itk-ink-inverse) 12%, transparent); }
+.itk-toast :focus-visible { outline-color: currentColor; }
+
+/* Scrim behind drawers and dialogs */
+.itk-scrim { background: var(--itk-scrim); }
+
+/* Table (x-itk.table) */
+.itk-table { width: 100%; border-collapse: collapse; font: 400 15px/22px var(--itk-font-sans); color: var(--itk-ink); font-variant-numeric: tabular-nums; }
+.itk-table caption { text-align: left; padding: var(--itk-space-3) var(--itk-space-4); font-weight: 600; font-size: 17px; line-height: 24px; }
+.itk-table thead th { text-align: left; font: 600 13px/18px var(--itk-font-sans); color: var(--itk-ink-muted); background: var(--itk-surface-sunken); padding: var(--itk-space-3) var(--itk-space-4); border-bottom: 1px solid var(--itk-border); white-space: nowrap; }
+.itk-table td, .itk-table tbody th { padding: var(--itk-space-3) var(--itk-space-4); border-bottom: 1px solid var(--itk-border); vertical-align: middle; }
+.itk-table td { white-space: nowrap; }
+.itk-table tbody th { text-align: left; font-weight: 600; color: var(--itk-ink); min-width: 10rem; }
+.itk-table tbody tr:last-child > * { border-bottom: 0; }
+.itk-table tbody tr:hover { background: var(--itk-accent-soft); }
+.itk-table .itk-num { text-align: right; white-space: nowrap; }
+.itk-table-wrap { position: relative; } /* keeps the sr-only caption inside the scroll frame */
+.itk-table-wrap:focus-visible { outline: 2px solid var(--itk-focus-ring); outline-offset: 2px; }
+
+/* Grid of small tiles (dashboard card view): columns follow the available width */
+.itk-grid-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--itk-space-3); }
+
+/* Native dialogs (x-itk.alert-dialog) */
+dialog.itk-dialog::backdrop { background: var(--itk-scrim); }
+
+/* Switch thumb (x-itk.switch) */
+.itk-switch-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: var(--itk-radius-full); background: var(--itk-ink-muted); transition: transform var(--itk-duration-base); }
+input:checked + .itk-switch-track::after { transform: translateX(18px); background: var(--itk-on-accent); }
+@media (forced-colors: active) { .itk-switch-track, .itk-check-box { border-color: ButtonText; } }
+
+/* Pagination (x-itk.pagination): numbers collapse to "Page X of Y" below 520px */
+.itk-pagination .itk-page-compact { display: none; }
+@media (max-width: 520px) {
+    .itk-pagination .itk-page-num { display: none; }
+    .itk-pagination .itk-page-compact { display: block; }
+    .itk-pagination ul { justify-content: space-between; flex-wrap: nowrap; }
+}

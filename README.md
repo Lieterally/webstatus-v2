@@ -23,8 +23,8 @@ Website monitoring system for Institut Teknologi Kalimantan (ITK). Performs auto
 ## Tech Stack
 
 - **Backend**: Laravel 13, PHP 8.3+
-- **Frontend**: Blade, Livewire 4, Alpine.js, Tailwind CSS v4, DaisyUI
-- **Icons**: Font Awesome Pro (all variants)
+- **Frontend**: Blade, Livewire 4, Alpine.js, Tailwind CSS v4 with the ITK Design System (`design-system/`, `x-itk.*` components)
+- **Icons**: Lucide (`mallardduck/blade-lucide-icons`)
 - **Charts**: Chart.js (dashboard), ApexCharts (downtime timeline)
 - **Select UI**: Tom Select
 - **Database**: MySQL (the test suite uses in-memory SQLite)
@@ -41,24 +41,68 @@ Website monitoring system for Institut Teknologi Kalimantan (ITK). Performs auto
 
 ## Setup
 
+These steps set up a fresh clone on a new machine.
+
+### 1. Get the code
+
 ```bash
-# Install PHP dependencies
+git clone https://github.com/Lieterally/webstatus-v2.git
+cd webstatus-v2
+git switch main-4
+```
+
+A clone checks out `main`. The current work (ITK Design System, public status page, bulk actions, incident view) is on `main-4`.
+
+### 2. Install dependencies and build the front end
+
+```bash
 composer install
-
-# Install JS dependencies and build assets
-npm install
+npm ci
 npm run build
+```
 
-# Copy environment file and configure
+`npm ci` installs exactly what `package-lock.json` lists.
+
+### 3. Create the environment file
+
+```bash
 cp .env.example .env
-
-# Generate application key
 php artisan key:generate
+```
 
-# Create the database named in DB_DATABASE first (webstatus_v2 by default), then run migrations and seed data
+Then edit `.env`:
+
+- `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` for your MySQL server (`webstatus_v2` by default)
+- `APP_URL`, for example `http://webstatus-v2.test` on Laragon
+- `TELEGRAM_BOT_TOKEN`: **leave it empty on a development machine.** The seeder adds real Telegram recipients, so with a token set this copy would send real down alerts.
+
+See [Configuration](#configuration) for the other settings.
+
+### 4. Create the database, then migrate and seed
+
+Create an empty database with the name in `DB_DATABASE` (for example in HeidiSQL or phpMyAdmin), then:
+
+```bash
 php artisan migrate --seed
+```
 
-# Serve the application
+The seeded logins are listed under [Default Credentials](#default-credentials). Every website starts private, so the public status page stays empty until you mark websites public (in the website form, or Website manager → Bulk actions → Make public).
+
+### 5. Laragon or Apache on Windows only: cache the config
+
+Apache with thread-safe PHP can fail to read `.env` when two requests arrive at once, which shows as an intermittent 500 "No application encryption key has been specified". Caching the config avoids it:
+
+```bash
+php artisan config:cache
+```
+
+Run it again after any change to `.env` or `config/`. Run `php artisan config:clear` before `php artisan test`, or the tests read the cached config (your real database) instead of `phpunit.xml`.
+
+### 6. Run the application
+
+On Laragon, open the site in the browser (for example `http://webstatus-v2.test`). Otherwise:
+
+```bash
 php artisan serve
 ```
 
@@ -66,6 +110,25 @@ Or use the all-in-one dev script (serves app, queue, logs, and Vite concurrently
 
 ```bash
 composer dev
+```
+
+### 7. Check it works
+
+- `/` shows the public status page.
+- `/login` signs you in with a seeded account and opens the dashboard.
+- Monitoring cycles: see [Running the Monitoring Cycle](#running-the-monitoring-cycle).
+
+### Updating an existing install
+
+After `git pull`:
+
+```bash
+composer install
+npm ci
+npm run build
+php artisan migrate
+php artisan view:cache
+php artisan config:cache   # Laragon / Apache on Windows, and on servers that cache config
 ```
 
 ## Configuration
@@ -163,6 +226,7 @@ Their passwords are set in `database/seeders`. Change both before exposing the s
 ## Running Tests
 
 ```bash
+php artisan config:clear   # if you cached the config (see Setup, step 5)
 php artisan test
 ```
 
